@@ -29,7 +29,10 @@ class NeonDatabaseService {
         if (val != null && val.isNotEmpty) return val;
       }
     } catch (_) {}
-    return 'postgresql://neondb_owner:npg_OtyTj7F9Aqnz@ep-red-sea-b5yphk96-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require';
+    throw StateError(
+      'NEON_CONNECTION_STRING is not set. Add it to apk/.env '
+      '(bundled as an asset, never committed) and rebuild.',
+    );
   }
 
   static List<String> get candidateEndpoints {

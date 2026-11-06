@@ -19,3 +19,7 @@ todos.json
 
 *.apk
 *.aab
+
+.vercel
+.env*
+apk/.env
