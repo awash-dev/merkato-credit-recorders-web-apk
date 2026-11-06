@@ -106,7 +106,7 @@ class MerkatoCreditApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
         scaffoldBackgroundColor:
-            Colors.white, // Pure white background as requested
+            const Color(0xFFF5F9ED), // Telebirr-inspired soft primary background
         dividerColor: const Color(0xFFE2E8F0),
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.white,

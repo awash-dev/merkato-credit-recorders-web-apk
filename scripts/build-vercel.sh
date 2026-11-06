@@ -34,3 +34,4 @@ if [ -f web/vercel.json ]; then
 fi
 
 echo "=== Flutter Web Build Complete ==="
+

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/neon_database_service.dart';
 import '../services/language_service.dart';
+import '../widgets/telebirr_background.dart';
 import 'main_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -124,8 +125,10 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: SafeArea(
-        child: Center(
+      body: TelebirrBackground(
+        isDark: isDark,
+        child: SafeArea(
+          child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(
               horizontal: 24.0,
@@ -331,6 +334,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }

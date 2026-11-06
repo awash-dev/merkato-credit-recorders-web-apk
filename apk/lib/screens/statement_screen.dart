@@ -4,9 +4,11 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+
 import '../models/statement.dart';
 import '../services/api_service.dart';
 import '../services/language_service.dart';
+import '../widgets/telebirr_background.dart';
 
 class StatementScreen extends StatefulWidget {
   final String accountName;
@@ -98,12 +100,18 @@ class _StatementScreenState extends State<StatementScreen> {
                       st.storeName.isEmpty
                           ? 'Account Statement'
                           : '${st.storeName} - Account Statement',
-                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+                      style: const pw.TextStyle(
+                        fontSize: 10,
+                        color: PdfColors.grey700,
+                      ),
                     ),
                     pw.SizedBox(height: 2),
                     pw.Text(
                       'Account: ${st.accountName} (${st.accountType.toUpperCase()})',
-                      style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+                      style: pw.TextStyle(
+                        fontSize: 11,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -112,18 +120,27 @@ class _StatementScreenState extends State<StatementScreen> {
                   children: [
                     pw.Text(
                       'Generated: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}',
-                      style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+                      style: const pw.TextStyle(
+                        fontSize: 9,
+                        color: PdfColors.grey600,
+                      ),
                     ),
                     pw.SizedBox(height: 4),
                     pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const pw.EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: pw.BoxDecoration(
                         color: PdfColors.grey200,
                         borderRadius: pw.BorderRadius.circular(4),
                       ),
                       child: pw.Text(
                         'Currency: ETB',
-                        style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+                        style: pw.TextStyle(
+                          fontSize: 9,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
                       ),
                     ),
                   ],
@@ -136,9 +153,23 @@ class _StatementScreenState extends State<StatementScreen> {
 
             // Excel-style Statement Table
             pw.TableHelper.fromTextArray(
-              headers: ['Date', 'Item', 'Qty', 'Price', 'Debit', 'Credit', 'Balance'],
-              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
-              headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF1E293B)),
+              headers: [
+                'Date',
+                'Item',
+                'Qty',
+                'Price',
+                'Debit',
+                'Credit',
+                'Balance',
+              ],
+              headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 9,
+                color: PdfColors.white,
+              ),
+              headerDecoration: const pw.BoxDecoration(
+                color: PdfColor.fromInt(0xFF1E293B),
+              ),
               cellStyle: const pw.TextStyle(fontSize: 8.5),
               cellAlignment: pw.Alignment.centerLeft,
               cellAlignments: {
@@ -153,9 +184,12 @@ class _StatementScreenState extends State<StatementScreen> {
               data: st.entries.map((entry) {
                 return [
                   entry.date,
-                  entry.description + (entry.bank != null ? ' [${entry.bank}]' : ''),
+                  entry.description +
+                      (entry.bank != null ? ' [${entry.bank}]' : ''),
                   entry.quantity > 0 ? entry.quantity.toStringAsFixed(0) : '-',
-                  entry.unitPrice > 0 ? _currencyFormat.format(entry.unitPrice) : '-',
+                  entry.unitPrice > 0
+                      ? _currencyFormat.format(entry.unitPrice)
+                      : '-',
                   entry.debit > 0 ? _currencyFormat.format(entry.debit) : '-',
                   entry.credit > 0 ? _currencyFormat.format(entry.credit) : '-',
                   _currencyFormat.format(entry.balance),
@@ -177,28 +211,44 @@ class _StatementScreenState extends State<StatementScreen> {
                 children: [
                   pw.Text(
                     'TOTALS (${st.entries.length} entries)',
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                    style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold,
+                      fontSize: 10,
+                    ),
                   ),
                   pw.Row(
                     children: [
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.end,
                         children: [
-                          pw.Text('Total Debit: ETB ${_currencyFormat.format(st.totals.totalDebit)}',
-                              style: const pw.TextStyle(fontSize: 9)),
-                          pw.Text('Total Credit: ETB ${_currencyFormat.format(st.totals.totalCredit)}',
-                              style: const pw.TextStyle(fontSize: 9)),
+                          pw.Text(
+                            'Total Debit: ETB ${_currencyFormat.format(st.totals.totalDebit)}',
+                            style: const pw.TextStyle(fontSize: 9),
+                          ),
+                          pw.Text(
+                            'Total Credit: ETB ${_currencyFormat.format(st.totals.totalCredit)}',
+                            style: const pw.TextStyle(fontSize: 9),
+                          ),
                         ],
                       ),
                       pw.SizedBox(width: 18),
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.end,
                         children: [
-                          pw.Text('OUTSTANDING BALANCE',
-                              style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                          pw.Text(
+                            'OUTSTANDING BALANCE',
+                            style: pw.TextStyle(
+                              fontSize: 9,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
                           pw.Text(
                             'ETB ${_currencyFormat.format(st.totals.outstanding)}',
-                            style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.red900),
+                            style: pw.TextStyle(
+                              fontSize: 11,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.red900,
+                            ),
                           ),
                         ],
                       ),
@@ -239,7 +289,8 @@ class _StatementScreenState extends State<StatementScreen> {
             color: theme.colorScheme.onSurface,
           ),
         ),
-        backgroundColor: theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface,
+        backgroundColor:
+            theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface,
         elevation: 0.5,
         foregroundColor: theme.colorScheme.onSurface,
         actions: [
@@ -251,13 +302,24 @@ class _StatementScreenState extends State<StatementScreen> {
             ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
-              : _statement == null || _statement!.entries.isEmpty
-                  ? Center(child: Text(_isAmharic ? 'ምንም የግብይት መዝገብ አልተገኘም' : 'No transaction records found for this account.'))
-                  : _buildStatementContent(_statement!),
+      body: TelebirrBackground(
+        isDark: isDark,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? Center(
+                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+              )
+            : _statement == null || _statement!.entries.isEmpty
+            ? Center(
+                child: Text(
+                  _isAmharic
+                      ? 'ምንም የግብይት መዝገብ አልተገኘም'
+                      : 'No transaction records found for this account.',
+                ),
+              )
+            : _buildStatementContent(_statement!),
+      ),
     );
   }
 
@@ -269,12 +331,20 @@ class _StatementScreenState extends State<StatementScreen> {
     final isStock = st.accountType == 'stock';
 
     final formulaText = isStock
-        ? (_isAmharic ? 'በመደብር ያለው = ገቢ (+) - ወጪ (-)' : 'Store On Hand = Stock In (+) - Stock Out (-)')
+        ? (_isAmharic
+              ? 'በመደብር ያለው = ገቢ (+) - ወጪ (-)'
+              : 'Store On Hand = Stock In (+) - Stock Out (-)')
         : isCustomer
-            ? (_isAmharic ? 'የደንበኛ ቀሪ = ጠቅላላ ተቀባይ - ጠቅላላ ተከፋይ' : 'Customer Balance = Total Debit - Total Credit')
-            : isDelala
-                ? (_isAmharic ? 'የደላላ ቀሪ = የወሰደው - የመለሰው' : 'Delala Balance = Commission Earned - Paid')
-                : (_isAmharic ? 'የአቅራቢ ቀሪ = ጠቅላላ ተከፋይ - ጠቅላላ ተቀባይ' : 'Supplier Balance = Total Credit - Total Debit');
+        ? (_isAmharic
+              ? 'የደንበኛ ቀሪ = ጠቅላላ ተቀባይ - ጠቅላላ ተከፋይ'
+              : 'Customer Balance = Total Debit - Total Credit')
+        : isDelala
+        ? (_isAmharic
+              ? 'የደላላ ቀሪ = የወሰደው - የመለሰው'
+              : 'Delala Balance = Commission Earned - Paid')
+        : (_isAmharic
+              ? 'የአቅራቢ ቀሪ = ጠቅላላ ተከፋይ - ጠቅላላ ተቀባይ'
+              : 'Supplier Balance = Total Credit - Total Debit');
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(10.0),
@@ -325,7 +395,9 @@ class _StatementScreenState extends State<StatementScreen> {
                   style: TextStyle(
                     fontSize: 10,
                     fontStyle: FontStyle.italic,
-                    color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                    color: isDark
+                        ? const Color(0xFF64748B)
+                        : const Color(0xFF94A3B8),
                   ),
                 ),
               ],
@@ -348,7 +420,9 @@ class _StatementScreenState extends State<StatementScreen> {
   Widget _buildMobileExcelTable(AccountStatement st) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final gridColor = isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1);
+    final gridColor = isDark
+        ? const Color(0xFF334155)
+        : const Color(0xFFCBD5E1);
     final isStock = st.accountType == 'stock';
 
     return Container(
@@ -366,8 +440,12 @@ class _StatementScreenState extends State<StatementScreen> {
             Container(
               padding: const EdgeInsets.symmetric(vertical: 7),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                border: Border(bottom: BorderSide(color: gridColor, width: 1.2)),
+                color: isDark
+                    ? const Color(0xFF1E293B)
+                    : const Color(0xFFF1F5F9),
+                border: Border(
+                  bottom: BorderSide(color: gridColor, width: 1.2),
+                ),
               ),
               child: Row(
                 children: [
@@ -376,12 +454,16 @@ class _StatementScreenState extends State<StatementScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       decoration: BoxDecoration(
-                        border: Border(right: BorderSide(color: gridColor, width: 0.8)),
+                        border: Border(
+                          right: BorderSide(color: gridColor, width: 0.8),
+                        ),
                       ),
                       child: Text(
                         _isAmharic ? 'ቀን' : 'Date',
                         style: TextStyle(
-                          color: isDark ? Colors.white : const Color(0xFF1E293B),
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF1E293B),
                           fontSize: 10.5,
                           fontWeight: FontWeight.bold,
                         ),
@@ -393,12 +475,16 @@ class _StatementScreenState extends State<StatementScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5),
                       decoration: BoxDecoration(
-                        border: Border(right: BorderSide(color: gridColor, width: 0.8)),
+                        border: Border(
+                          right: BorderSide(color: gridColor, width: 0.8),
+                        ),
                       ),
                       child: Text(
                         _isAmharic ? 'ዕቃ' : 'Item',
                         style: TextStyle(
-                          color: isDark ? Colors.white : const Color(0xFF1E293B),
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF1E293B),
                           fontSize: 10.5,
                           fontWeight: FontWeight.bold,
                         ),
@@ -410,7 +496,9 @@ class _StatementScreenState extends State<StatementScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       decoration: BoxDecoration(
-                        border: Border(right: BorderSide(color: gridColor, width: 0.8)),
+                        border: Border(
+                          right: BorderSide(color: gridColor, width: 0.8),
+                        ),
                       ),
                       child: Text(
                         isStock
@@ -418,7 +506,9 @@ class _StatementScreenState extends State<StatementScreen> {
                             : (_isAmharic ? 'ተቀባይ (+)' : 'Debit (+)'),
                         textAlign: TextAlign.right,
                         style: TextStyle(
-                          color: isDark ? Colors.white : const Color(0xFF1E293B),
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF1E293B),
                           fontSize: 10.5,
                           fontWeight: FontWeight.bold,
                         ),
@@ -430,7 +520,9 @@ class _StatementScreenState extends State<StatementScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       decoration: BoxDecoration(
-                        border: Border(right: BorderSide(color: gridColor, width: 0.8)),
+                        border: Border(
+                          right: BorderSide(color: gridColor, width: 0.8),
+                        ),
                       ),
                       child: Text(
                         isStock
@@ -438,7 +530,9 @@ class _StatementScreenState extends State<StatementScreen> {
                             : (_isAmharic ? 'ተከፋይ (-)' : 'Credit (-)'),
                         textAlign: TextAlign.right,
                         style: TextStyle(
-                          color: isDark ? Colors.white : const Color(0xFF1E293B),
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF1E293B),
                           fontSize: 10.5,
                           fontWeight: FontWeight.bold,
                         ),
@@ -453,7 +547,9 @@ class _StatementScreenState extends State<StatementScreen> {
                         _isAmharic ? 'ቀሪ' : (isStock ? 'On Hand' : 'Balance'),
                         textAlign: TextAlign.right,
                         style: TextStyle(
-                          color: isDark ? Colors.white : const Color(0xFF1E293B),
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF1E293B),
                           fontSize: 10.5,
                           fontWeight: FontWeight.bold,
                         ),
@@ -469,18 +565,17 @@ class _StatementScreenState extends State<StatementScreen> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: st.entries.length,
-              separatorBuilder: (_, _) => Divider(
-                height: 1,
-                thickness: 0.8,
-                color: gridColor,
-              ),
+              separatorBuilder: (_, _) =>
+                  Divider(height: 1, thickness: 0.8, color: gridColor),
               itemBuilder: (context, index) {
                 final entry = st.entries[index];
                 final isEven = index % 2 == 0;
 
                 final rowBg = isEven
                     ? (isDark ? const Color(0xFF1E1E1E) : Colors.white)
-                    : (isDark ? const Color(0xFF18181B) : const Color(0xFFF8FAFC));
+                    : (isDark
+                          ? const Color(0xFF18181B)
+                          : const Color(0xFFF8FAFC));
 
                 return Container(
                   color: rowBg,
@@ -491,15 +586,22 @@ class _StatementScreenState extends State<StatementScreen> {
                       Expanded(
                         flex: 6,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 7,
+                          ),
                           decoration: BoxDecoration(
-                            border: Border(right: BorderSide(color: gridColor, width: 0.8)),
+                            border: Border(
+                              right: BorderSide(color: gridColor, width: 0.8),
+                            ),
                           ),
                           child: Text(
                             entry.date,
                             style: TextStyle(
                               fontSize: 9.5,
-                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                              color: isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF475569),
                               fontWeight: FontWeight.w600,
                               letterSpacing: -0.2,
                             ),
@@ -513,9 +615,14 @@ class _StatementScreenState extends State<StatementScreen> {
                       Expanded(
                         flex: 13,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 7),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 7,
+                          ),
                           decoration: BoxDecoration(
-                            border: Border(right: BorderSide(color: gridColor, width: 0.8)),
+                            border: Border(
+                              right: BorderSide(color: gridColor, width: 0.8),
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -537,7 +644,9 @@ class _StatementScreenState extends State<StatementScreen> {
                                     '${entry.quantity.toStringAsFixed(0)} pcs @ ${_currencyFormat.format(entry.unitPrice)}',
                                     style: TextStyle(
                                       fontSize: 9.5,
-                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                      color: isDark
+                                          ? const Color(0xFF94A3B8)
+                                          : const Color(0xFF64748B),
                                     ),
                                   ),
                                 )
@@ -549,7 +658,9 @@ class _StatementScreenState extends State<StatementScreen> {
                                     style: TextStyle(
                                       fontSize: 9.5,
                                       fontWeight: FontWeight.bold,
-                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                      color: isDark
+                                          ? const Color(0xFF94A3B8)
+                                          : const Color(0xFF64748B),
                                     ),
                                   ),
                                 ),
@@ -562,22 +673,31 @@ class _StatementScreenState extends State<StatementScreen> {
                       Expanded(
                         flex: 6,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 7,
+                          ),
                           decoration: BoxDecoration(
-                            border: Border(right: BorderSide(color: gridColor, width: 0.8)),
+                            border: Border(
+                              right: BorderSide(color: gridColor, width: 0.8),
+                            ),
                           ),
                           alignment: Alignment.centerRight,
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerRight,
                             child: Text(
-                              entry.debit > 0 ? _currencyFormat.format(entry.debit) : '-',
+                              entry.debit > 0
+                                  ? _currencyFormat.format(entry.debit)
+                                  : '-',
                               style: TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w700,
                                 color: entry.debit > 0
                                     ? theme.colorScheme.onSurface
-                                    : (isDark ? Colors.grey.shade700 : Colors.grey.shade400),
+                                    : (isDark
+                                          ? Colors.grey.shade700
+                                          : Colors.grey.shade400),
                               ),
                             ),
                           ),
@@ -588,13 +708,21 @@ class _StatementScreenState extends State<StatementScreen> {
                       Expanded(
                         flex: 6,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 7,
+                          ),
                           decoration: BoxDecoration(
-                            border: Border(right: BorderSide(color: gridColor, width: 0.8)),
+                            border: Border(
+                              right: BorderSide(color: gridColor, width: 0.8),
+                            ),
                           ),
                           alignment: Alignment.centerRight,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1.5),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 3,
+                              vertical: 1.5,
+                            ),
                             decoration: const BoxDecoration(
                               color: Colors.transparent,
                             ),
@@ -602,13 +730,17 @@ class _StatementScreenState extends State<StatementScreen> {
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.centerRight,
                               child: Text(
-                                entry.credit > 0 ? _currencyFormat.format(entry.credit) : '-',
+                                entry.credit > 0
+                                    ? _currencyFormat.format(entry.credit)
+                                    : '-',
                                 style: TextStyle(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w900,
                                   color: entry.credit > 0
                                       ? theme.colorScheme.onSurface
-                                      : (isDark ? Colors.grey.shade700 : Colors.grey.shade400),
+                                      : (isDark
+                                            ? Colors.grey.shade700
+                                            : Colors.grey.shade400),
                                 ),
                               ),
                             ),
@@ -620,7 +752,10 @@ class _StatementScreenState extends State<StatementScreen> {
                       Expanded(
                         flex: 6,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 7,
+                          ),
                           alignment: Alignment.centerRight,
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
@@ -646,10 +781,17 @@ class _StatementScreenState extends State<StatementScreen> {
             Container(
               padding: const EdgeInsets.symmetric(vertical: 8),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                color: isDark
+                    ? const Color(0xFF1E293B)
+                    : const Color(0xFFF1F5F9),
                 border: Border(
                   top: BorderSide(color: gridColor, width: 1.5),
-                  bottom: BorderSide(color: isDark ? const Color(0xFF475569) : Colors.grey.shade700, width: 2.2),
+                  bottom: BorderSide(
+                    color: isDark
+                        ? const Color(0xFF475569)
+                        : Colors.grey.shade700,
+                    width: 2.2,
+                  ),
                 ),
               ),
               child: Row(
@@ -659,7 +801,9 @@ class _StatementScreenState extends State<StatementScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       decoration: BoxDecoration(
-                        border: Border(right: BorderSide(color: gridColor, width: 0.8)),
+                        border: Border(
+                          right: BorderSide(color: gridColor, width: 0.8),
+                        ),
                       ),
                       child: Text(
                         _isAmharic ? 'ጠቅላላ ድምር (ብር)' : 'TOTAL (ETB)',
@@ -677,14 +821,19 @@ class _StatementScreenState extends State<StatementScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       decoration: BoxDecoration(
-                        border: Border(right: BorderSide(color: gridColor, width: 0.8)),
+                        border: Border(
+                          right: BorderSide(color: gridColor, width: 0.8),
+                        ),
                       ),
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerRight,
                         child: Text(
                           _currencyFormat.format(st.totals.totalDebit),
-                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                          ),
                         ),
                       ),
                     ),
@@ -694,7 +843,9 @@ class _StatementScreenState extends State<StatementScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       decoration: BoxDecoration(
-                        border: Border(right: BorderSide(color: gridColor, width: 0.8)),
+                        border: Border(
+                          right: BorderSide(color: gridColor, width: 0.8),
+                        ),
                       ),
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
@@ -759,11 +910,20 @@ class _StatementScreenState extends State<StatementScreen> {
                 isStock
                     ? (_isAmharic ? 'ጠቅላላ ገቢ ዕቃ፦' : 'Total Stock In:')
                     : (_isAmharic ? 'ጠቅላላ ተቀባይ፦' : 'Total Debit:'),
-                style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
               ),
               Text(
                 'ETB ${_currencyFormat.format(st.totals.totalDebit)}',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurface,
+                ),
               ),
             ],
           ),
@@ -774,12 +934,23 @@ class _StatementScreenState extends State<StatementScreen> {
               Text(
                 isStock
                     ? (_isAmharic ? 'ጠቅላላ ወጪ ዕቃ፦' : 'Total Stock Out:')
-                    : (_isAmharic ? 'ጠቅላላ ተከፋይ (ክፍያዎች)፦' : 'Total Credit (Payments):'),
-                style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                    : (_isAmharic
+                          ? 'ጠቅላላ ተከፋይ (ክፍያዎች)፦'
+                          : 'Total Credit (Payments):'),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
               ),
               Text(
                 'ETB ${_currencyFormat.format(st.totals.totalCredit)}',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurface,
+                ),
               ),
             ],
           ),
@@ -789,9 +960,15 @@ class _StatementScreenState extends State<StatementScreen> {
             children: [
               Text(
                 isStock
-                    ? (_isAmharic ? 'የመደብር እቃዎች ዋጋ፦' : 'INVENTORY ON HAND VALUE:')
+                    ? (_isAmharic
+                          ? 'የመደብር እቃዎች ዋጋ፦'
+                          : 'INVENTORY ON HAND VALUE:')
                     : (_isAmharic ? 'የተጣራ ቀሪ ሂሳብ፦' : 'OUTSTANDING BALANCE:'),
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurface,
+                ),
               ),
               Text(
                 'ETB ${_currencyFormat.format(st.totals.outstanding)}',

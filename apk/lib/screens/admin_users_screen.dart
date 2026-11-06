@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../models/store.dart';
 import '../services/api_service.dart';
+import '../widgets/telebirr_background.dart';
 
 class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key});
@@ -300,63 +301,65 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: const Color(0xFFF5F9ED),
       appBar: AppBar(
         title: const Text('Storekeeper Accounts'),
         backgroundColor: Colors.white,
         elevation: 0.5,
         foregroundColor: const Color(0xFF0F172A),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
-              : LayoutBuilder(
-                  builder: (context, constraints) {
-                    final horizontalPadding = constraints.maxWidth >= 700 ? 24.0 : 12.0;
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 900),
-                        child: ListView(
-                          padding: EdgeInsets.fromLTRB(
-                            horizontalPadding,
-                            12,
-                            horizontalPadding,
-                            24,
-                          ),
-                          children: [
-                            _buildCreateStoreCard(),
-                            const SizedBox(height: 12),
-                            _buildCreateUserCard(),
-                            const SizedBox(height: 18),
-                            Text(
-                              'Storekeepers (${_users.length})',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF334155),
-                              ),
+      body: TelebirrBackground(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final horizontalPadding = constraints.maxWidth >= 700 ? 24.0 : 12.0;
+                      return Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 900),
+                          child: ListView(
+                            padding: EdgeInsets.fromLTRB(
+                              horizontalPadding,
+                              12,
+                              horizontalPadding,
+                              24,
                             ),
-                            const SizedBox(height: 8),
-                            if (_users.isEmpty)
-                              const Card(
-                                elevation: 0,
-                                color: Colors.white,
-                                child: Padding(
-                                  padding: EdgeInsets.all(20),
-                                  child: Center(
-                                    child: Text('No storekeeper accounts found'),
-                                  ),
+                            children: [
+                              _buildCreateStoreCard(),
+                              const SizedBox(height: 12),
+                              _buildCreateUserCard(),
+                              const SizedBox(height: 18),
+                              Text(
+                                'Storekeepers (${_users.length})',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF334155),
                                 ),
-                              )
-                            else
-                              ..._users.map(_buildUserCard),
-                          ],
+                              ),
+                              const SizedBox(height: 8),
+                              if (_users.isEmpty)
+                                const Card(
+                                  elevation: 0,
+                                  color: Colors.white,
+                                  child: Padding(
+                                    padding: EdgeInsets.all(20),
+                                    child: Center(
+                                      child: Text('No storekeeper accounts found'),
+                                    ),
+                                  ),
+                                )
+                              else
+                                ..._users.map(_buildUserCard),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  ),
+      ),
     );
   }
 

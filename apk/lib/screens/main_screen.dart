@@ -16,6 +16,7 @@ import 'stock_transaction_dialog.dart';
 import 'product_history_dialog.dart';
 import 'edit_product_dialog.dart';
 import 'admin_users_screen.dart';
+import '../widgets/telebirr_background.dart';
 
 class MainScreen extends StatefulWidget {
   final AppUser currentUser;
@@ -2740,7 +2741,7 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       backgroundColor: isDark
           ? const Color(0xFF131B2E)
-          : const Color(0xFFFAF8FF),
+          : const Color(0xFFF5F9ED),
       appBar: AppBar(
         backgroundColor: isDark
             ? const Color(0xFF182036)
@@ -2930,9 +2931,11 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
 
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
+      body: TelebirrBackground(
+        isDark: isDark,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
               onRefresh: _reloadRecordsOnly,
               child: Column(
                 children: [
@@ -3124,6 +3127,7 @@ class _MainScreenState extends State<MainScreen> {
                 ],
               ),
             ),
+      ),
 
       // Floating Add Transaction / Store Entry Button
       floatingActionButton:
