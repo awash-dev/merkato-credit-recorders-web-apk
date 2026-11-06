@@ -25,7 +25,7 @@ jobs:
     name: apk/ is the workflow source of truth
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Verify root .github/workflows matches apk/.github/workflows
         run: bash apk/scripts/sync-workflows.sh --check
 
@@ -37,10 +37,10 @@ jobs:
       run:
         working-directory: apk
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -50,6 +50,20 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      # pubspec.yaml declares .env as a Flutter asset, so even `flutter test`
+      # fails without it ("No file or variants found for asset: .env").
+      # Tests never hit the DB, so a placeholder is fine when the secret is
+      # unavailable (fork PRs).
+      - name: Write apk/.env (required pubspec asset)
+        env:
+          NEON_CONNECTION_STRING: ${{ secrets.NEON_CONNECTION_STRING }}
+        run: |
+          if [ -n "$NEON_CONNECTION_STRING" ]; then
+            printf 'NEON_CONNECTION_STRING="%s"\n' "$NEON_CONNECTION_STRING" > .env
+          else
+            echo 'NEON_CONNECTION_STRING=""' > .env
+          fi
 
       - name: Install dependencies
         run: flutter pub get
@@ -69,10 +83,10 @@ jobs:
       run:
         working-directory: apk
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -112,7 +126,7 @@ jobs:
         run: flutter build apk --release
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: merkato-credit-record-${{ github.sha }}
           path: apk/build/app/outputs/flutter-apk/app-release.apk
@@ -122,7 +136,7 @@ jobs:
       #   git tag v1.0.19 && git push origin v1.0.19
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: apk/build/app/outputs/flutter-apk/app-release.apk
           generate_release_notes: true

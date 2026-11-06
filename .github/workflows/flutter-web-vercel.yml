@@ -28,7 +28,7 @@ jobs:
     name: apk/ is the workflow source of truth
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Verify root .github/workflows matches apk/.github/workflows
         run: bash apk/scripts/sync-workflows.sh --check
 
@@ -44,7 +44,7 @@ jobs:
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -78,7 +78,7 @@ jobs:
         run: flutter build web --release
 
       - name: Upload web artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: merkato-credit-record-web-${{ github.sha }}
           path: apk/build/web
