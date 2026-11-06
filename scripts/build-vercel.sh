@@ -8,7 +8,7 @@ git config --global --add safe.directory "*" || true
 # Check if flutter is already in PATH
 if ! command -v flutter &> /dev/null; then
   echo "Installing Flutter Linux SDK..."
-  FLUTTER_VERSION="3.29.0"
+  FLUTTER_VERSION="3.47.9"
   curl -s -O "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
   tar -xf "flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
   rm -f "flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"

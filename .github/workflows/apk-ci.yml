@@ -120,13 +120,15 @@ jobs:
         run: flutter pub get
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/merkato-credit-record-release.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
           name: merkato-credit-record-${{ github.sha }}
-          path: apk/build/app/outputs/flutter-apk/app-release.apk
+          path: apk/build/app/outputs/flutter-apk/merkato-credit-record-release.apk
           if-no-files-found: error
 
       # Cut a GitHub Release automatically on tag push or on push to main (tag: latest)
@@ -136,6 +138,8 @@ jobs:
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
           name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Merkato Credit Record (Latest APK)' }}
-          files: apk/build/app/outputs/flutter-apk/app-release.apk
+          files: |
+            apk/build/app/outputs/flutter-apk/merkato-credit-record-release.apk
+            apk/build/app/outputs/flutter-apk/app-release.apk
           generate_release_notes: true
           make_latest: true
