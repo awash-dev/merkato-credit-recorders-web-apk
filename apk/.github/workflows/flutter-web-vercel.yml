@@ -1,0 +1,105 @@
+name: Flutter Web → Vercel
+
+# Canonical copy lives in apk/.github/workflows/ — GitHub only executes files
+# in the repository-root .github/workflows/, so keep them in sync with:
+#   ./apk/scripts/sync-workflows.sh
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apk/**'
+      - '.github/workflows/flutter-web-vercel.yml'
+  pull_request:
+    paths:
+      - 'apk/**'
+      - '.github/workflows/flutter-web-vercel.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflow-sync:
+    name: apk/ is the workflow source of truth
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify root .github/workflows matches apk/.github/workflows
+        run: bash apk/scripts/sync-workflows.sh --check
+
+  build-and-deploy:
+    name: Build Flutter Web & Deploy
+    needs: workflow-sync
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apk
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable web support
+        run: flutter config --enable-web
+
+      # apk/.env is bundled as a Flutter asset, so the web build needs it.
+      # It is gitignored, so CI writes it from the NEON_CONNECTION_STRING secret.
+      - name: Write apk/.env
+        env:
+          NEON_CONNECTION_STRING: ${{ secrets.NEON_CONNECTION_STRING }}
+        run: |
+          if [ -n "$NEON_CONNECTION_STRING" ]; then
+            printf 'NEON_CONNECTION_STRING="%s"\n' "$NEON_CONNECTION_STRING" > .env
+          elif [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            # Fork PRs have no secrets — build a check-only bundle.
+            echo 'NEON_CONNECTION_STRING=""' > .env
+          else
+            echo "::error::Repository secret NEON_CONNECTION_STRING is not set. Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Flutter web (release)
+        run: flutter build web --release
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: merkato-credit-record-web-${{ github.sha }}
+          path: apk/build/web
+          if-no-files-found: error
+
+      # Deploys the static build with the Vercel CLI. VERCEL_ORG_ID +
+      # VERCEL_PROJECT_ID make the CLI attach to an existing project instead
+      # of creating a new one.
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Deploy to Vercel production
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        working-directory: apk/build/web
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::error::Set VERCEL_TOKEN, VERCEL_ORG_ID and VERCEL_PROJECT_ID repository secrets."
+            exit 1
+          fi
+          URL=$(vercel deploy --prod --yes --token="$VERCEL_TOKEN" | tail -n 1)
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "🌐 Flutter web live at $URL" >> "$GITHUB_STEP_SUMMARY"
