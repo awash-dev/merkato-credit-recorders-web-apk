@@ -1,0 +1,11 @@
+{
+  "buildCommand": "bash scripts/build-vercel.sh",
+  "outputDirectory": "apk/build/web",
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
