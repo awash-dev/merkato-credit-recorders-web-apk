@@ -23,3 +23,6 @@ todos.json
 .vercel
 .env*
 apk/.env
+# ...but keep the documented templates tracked
+!.env.example
+!apk/.env.example

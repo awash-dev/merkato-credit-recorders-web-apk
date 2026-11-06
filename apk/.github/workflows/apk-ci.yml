@@ -1,0 +1,128 @@
+name: APK CI/CD
+
+# Canonical copy lives in apk/.github/workflows/ — GitHub only executes files
+# in the repository-root .github/workflows/, so keep them in sync with:
+#   ./apk/scripts/sync-workflows.sh
+
+on:
+  # No `paths` filter here on purpose: tag pushes (releases) must never be
+  # skipped because the tagged commit didn't touch apk/**.
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  workflow-sync:
+    name: apk/ is the workflow source of truth
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify root .github/workflows matches apk/.github/workflows
+        run: bash apk/scripts/sync-workflows.sh --check
+
+  quality:
+    name: Analyze & Test
+    needs: workflow-sync
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Static analysis
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Unit & widget tests
+        run: flutter test
+
+  build:
+    name: Build Release APK
+    if: github.event_name != 'pull_request'
+    needs: quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
+
+      - name: Ensure debug keystore exists
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
+          fi
+
+      # apk/.env is gitignored (it holds DB credentials), so CI writes it from
+      # a repository secret instead of committing it.
+      - name: Write apk/.env from repository secrets
+        env:
+          NEON_CONNECTION_STRING: ${{ secrets.NEON_CONNECTION_STRING }}
+        run: |
+          if [ -z "$NEON_CONNECTION_STRING" ]; then
+            echo "::error::Repository secret NEON_CONNECTION_STRING is not set. Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          printf 'NEON_CONNECTION_STRING="%s"\n' "$NEON_CONNECTION_STRING" > .env
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: merkato-credit-record-${{ github.sha }}
+          path: apk/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      # Cut a GitHub Release automatically when you push a tag, e.g.:
+      #   git tag v1.0.19 && git push origin v1.0.19
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: apk/build/app/outputs/flutter-apk/app-release.apk
+          generate_release_notes: true
