@@ -49,4 +49,23 @@ Directly available in the project root:
 - [`web/`](file:///d:/project/eyoba-project/New%20folder/web/): React + Vite web dashboard and backend API server (`web/server/index.mjs`) on port `8787` connected to Neon PostgreSQL.
 - [`apk/`](file:///d:/project/eyoba-project/New%20folder/apk/): Complete native Flutter application built with Flutter SDK 3.38.6 / Dart 3.10.6.
 
+## ⚙️ CI/CD (GitHub Actions)
+
+| Workflow | File | Trigger | What it does |
+| :--- | :--- | :--- | :--- |
+| **Web Deploy** | [`.github/workflows/deploy-web.yml`](.github/workflows/deploy-web.yml) | Push to `main` | Builds the Vite app and deploys to **Vercel** production (`vercel build --prebuilt`). |
+| **APK Release** | [`.github/workflows/release_apk.yml`](.github/workflows/release_apk.yml) | Push to `main`, tag `v*`, or manual | Builds the Flutter Android APK and publishes it to **GitHub Releases** + a workflow artifact. |
+
+### Required repository secrets (Web → Vercel)
+
+Create them under *Settings → Secrets and variables → Actions*:
+
+- `VERCEL_TOKEN` — from [vercel.com/account/tokens](https://vercel.com/account/tokens)
+- `VERCEL_ORG_ID` — from the Vercel project's `.vercel/project.json` (or `vercel link`)
+- `VERCEL_PROJECT_ID` — same file as above
+
+Also set `DATABASE_URL` (and optionally `VITE_DATABASE_URL`, S3 keys) in the Vercel project's *Environment Variables*, since `/api/sql` is an Edge Function that reads them at runtime.
+
+---
+
 # merkato-credit-recorders-web-apk

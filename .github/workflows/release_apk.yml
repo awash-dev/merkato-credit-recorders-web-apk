@@ -90,6 +90,13 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Release tag: $TAG"
 
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: merkato-credit-record-apk
+          path: release_assets/merkato-credit-record-release.apk
+          if-no-files-found: error
+
       - name: Upload Release Asset to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
