@@ -987,59 +987,6 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  Future<void> _deleteInventoryProduct(InventoryProduct prod) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(_isAmharic ? 'ዕቃ መሰረዝ' : 'Delete Product'),
-        content: Text(
-          _isAmharic
-              ? 'እርግጠኛ ነዎት "${prod.productName}"ን መሰረዝ ይፈልጋሉ?'
-              : 'Are you sure you want to delete "${prod.productName}"?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(_isAmharic ? 'ይቅር' : 'Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(_isAmharic ? 'ሰርዝ' : 'Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      try {
-        await ApiService.deleteInventoryProduct(prod.id);
-        await _reloadRecordsOnly();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                _isAmharic ? 'ዕቃው ተሰርዟል' : 'Product deleted successfully',
-              ),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString().replaceAll('Exception:', '').trim()),
-              backgroundColor: const Color(0xFFBA1A1A),
-            ),
-          );
-        }
-      }
-    }
-  }
-
   void _openSettingsModal() {
     showModalBottomSheet(
       context: context,
@@ -1249,42 +1196,43 @@ class _MainScreenState extends State<MainScreen> {
           if (widget.currentUser.isAdmin)
             _buildStoreAdminSummary(theme, isDark),
 
-          // 2. Available Store Items Header Bar (Admin only - removed for Storekeeper)
-          if (widget.currentUser.isAdmin) ...[
-            Container(
-              margin: const EdgeInsets.fromLTRB(14, 2, 14, 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF242C40) : const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(7),
-                border: Border.all(color: gridBorderColor, width: 1.0),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _isAmharic ? 'በመደብር ውስጥ ያሉ ዕቃዎች' : 'Available Store Items',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 12.5,
-                      color: theme.colorScheme.onSurface,
-                    ),
+          // 2. Available Store Items Header Bar (Storekeeper gets "+ Add Item"; Admin is View Mode Only)
+          Container(
+            margin: const EdgeInsets.fromLTRB(14, 2, 14, 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF242C40) : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(color: gridBorderColor, width: 1.0),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _isAmharic ? 'በመደብር ውስጥ ያሉ ዕቃዎች' : 'Available Store Items',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12.5,
+                    color: theme.colorScheme.onSurface,
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _isAmharic
-                            ? '${filteredProducts.length} ዕቃዎች'
-                            : '${filteredProducts.length} Products',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: isDark
-                              ? const Color(0xFF94A3B8)
-                              : const Color(0xFF64748B),
-                        ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _isAmharic
+                          ? '${filteredProducts.length} ዕቃዎች'
+                          : '${filteredProducts.length} Products',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: isDark
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF64748B),
                       ),
+                    ),
+                    // Create (+ Add Item) is only for Storekeeper; Admin is View Mode Only
+                    if (!widget.currentUser.isAdmin) ...[
                       const SizedBox(width: 8),
                       InkWell(
                         onTap: _openNewProductDialog,
@@ -1320,12 +1268,12 @@ class _MainScreenState extends State<MainScreen> {
                         ),
                       ),
                     ],
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(height: 6),
-          ],
+          ),
+          const SizedBox(height: 6),
 
           // 3. Products List or Empty State
           if (filteredProducts.isEmpty)
@@ -1362,7 +1310,8 @@ class _MainScreenState extends State<MainScreen> {
                           : const Color(0xFF64748B),
                     ),
                   ),
-                  if (widget.currentUser.isAdmin) ...[
+                  // Register product in empty state is for Storekeeper only
+                  if (!widget.currentUser.isAdmin) ...[
                     const SizedBox(height: 10),
                     TextButton.icon(
                       onPressed: _openNewProductDialog,
@@ -1919,37 +1868,39 @@ class _MainScreenState extends State<MainScreen> {
               ),
               child: Row(
                 children: [
-                  // Edit Product button (available for both Admin and Storekeeper)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _openEditProductDialog(prod),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: isDark
-                            ? Colors.white
-                            : const Color(0xFF1E293B),
-                        side: BorderSide(color: gridBorderColor),
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 6,
-                          horizontal: 4,
+                  // Edit Product button (Storekeeper only; Admin is View Mode Only)
+                  if (!widget.currentUser.isAdmin) ...[
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _openEditProductDialog(prod),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: isDark
+                              ? Colors.white
+                              : const Color(0xFF1E293B),
+                          side: BorderSide(color: gridBorderColor),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 6,
+                            horizontal: 4,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
+                        icon: const Icon(Icons.edit_outlined, size: 14),
+                        label: Text(
+                          _isAmharic ? 'አስተካክል' : 'Edit',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      icon: const Icon(Icons.edit_outlined, size: 14),
-                      label: Text(
-                        _isAmharic ? 'አስተካክል' : 'Edit',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
+                    const SizedBox(width: 6),
+                  ],
 
-                  // Stock In/Out button (only for storekeeper, hidden for admin in admin dashboard)
+                  // Stock In/Out button (Storekeeper only)
                   if (!widget.currentUser.isAdmin) ...[
                     Expanded(
                       child: OutlinedButton.icon(
@@ -1981,7 +1932,7 @@ class _MainScreenState extends State<MainScreen> {
                     const SizedBox(width: 6),
                   ],
 
-                  // History button
+                  // History button (Both Admin and Storekeeper can view history)
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () => _openProductHistoryDialog(prod),
@@ -2009,38 +1960,6 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                     ),
                   ),
-
-                  // Delete button (admin only)
-                  if (widget.currentUser.isAdmin) ...[
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _deleteInventoryProduct(prod),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFDC2626),
-                          side: BorderSide(
-                            color: const Color(0xFFDC2626).withValues(alpha: 0.5),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 6,
-                            horizontal: 4,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                        ),
-                        icon: const Icon(Icons.delete_outline, size: 14),
-                        label: Text(
-                          _isAmharic ? 'ሰርዝ' : 'Delete',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
