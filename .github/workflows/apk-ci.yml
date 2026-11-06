@@ -129,11 +129,13 @@ jobs:
           path: apk/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
 
-      # Cut a GitHub Release automatically when you push a tag, e.g.:
-      #   git tag v1.0.19 && git push origin v1.0.19
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Cut a GitHub Release automatically on tag push or on push to main (tag: latest)
+      - name: Create or Update GitHub Release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Merkato Credit Record (Latest APK)' }}
           files: apk/build/app/outputs/flutter-apk/app-release.apk
           generate_release_notes: true
+          make_latest: true

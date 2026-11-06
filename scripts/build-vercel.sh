@@ -3,6 +3,8 @@ set -e
 
 echo "=== Building Flutter Web for Vercel ==="
 
+git config --global --add safe.directory "*" || true
+
 # Check if flutter is already in PATH
 if ! command -v flutter &> /dev/null; then
   echo "Installing Flutter Linux SDK..."
@@ -10,6 +12,7 @@ if ! command -v flutter &> /dev/null; then
   curl -s -O "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
   tar -xf "flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
   rm -f "flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
+  git config --global --add safe.directory "$PWD/flutter" || true
   export PATH="$PWD/flutter/bin:$PATH"
 fi
 
