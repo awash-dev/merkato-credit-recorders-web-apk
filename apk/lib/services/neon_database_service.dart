@@ -1468,6 +1468,60 @@ class NeonDatabaseService {
     return rows.map((r) => InventoryProduct.fromJson(r)).toList();
   }
 
+  /// Fetch a single product by ID directly from store_inventory
+  static Future<InventoryProduct?> getProductByIdDirect(String id) async {
+    try {
+      final rows = await executeSql(
+        'SELECT * FROM store_inventory WHERE id = \$1::uuid LIMIT 1',
+        [id],
+      );
+      if (rows.isEmpty) return null;
+      return InventoryProduct.fromJson(rows.first);
+    } catch (e) {
+      debugPrint('Error getProductByIdDirect: \$e');
+      return null;
+    }
+  }
+
+  /// Fetch a single product by name directly from store_inventory
+  static Future<InventoryProduct?> getProductByNameDirect(
+    String name, [
+    String? storeId,
+  ]) async {
+    final clean = name.trim().toLowerCase();
+    if (clean.isEmpty) return null;
+    try {
+      List<Map<String, dynamic>> rows;
+      if (storeId != null && storeId.isNotEmpty && storeId != 'all') {
+        rows = await executeSql(
+          '''
+          SELECT * FROM store_inventory
+          WHERE LOWER(TRIM(product_name)) = \$1
+            AND (store_id = \$2 OR store_id IS NULL)
+            AND (is_deleted IS NULL OR is_deleted = FALSE)
+          LIMIT 1
+          ''',
+          [clean, storeId],
+        );
+      } else {
+        rows = await executeSql(
+          '''
+          SELECT * FROM store_inventory
+          WHERE LOWER(TRIM(product_name)) = \$1
+            AND (is_deleted IS NULL OR is_deleted = FALSE)
+          LIMIT 1
+          ''',
+          [clean],
+        );
+      }
+      if (rows.isEmpty) return null;
+      return InventoryProduct.fromJson(rows.first);
+    } catch (e) {
+      debugPrint('Error getProductByNameDirect: \$e');
+      return null;
+    }
+  }
+
   /// Check whether a product with this name already exists in the given store
   static Future<bool> checkProductExistsDirect(
     String productName,
@@ -1542,9 +1596,9 @@ class NeonDatabaseService {
         price_per_piece, total_value, is_active, updated_by
       ) VALUES (
         \$1, \$2, \$3, \$4, 'Pcs',
-        \$5, \$6, \$7, \$8,
-        \$9, \$10, \$11, \$12, \$13,
-        \$14, \$15, \$16, 'PCS', \$17, \$18, TRUE, \$13
+        \$5::numeric, \$6::numeric, \$7::numeric, \$8::numeric,
+        \$9::numeric, \$10, \$11, \$12, \$13,
+        \$14::numeric, \$15::numeric, \$16::numeric, 'PCS', \$17::numeric, \$18::numeric, TRUE, \$13
       )
       RETURNING *
       ''',
@@ -1585,12 +1639,14 @@ class NeonDatabaseService {
             store_id, product_id, movement_type, quantity,
             transaction_unit, conversion_factor, base_quantity,
             previous_stock, new_stock, unit_price, total_price,
+            cartons, loose_pieces, total_pieces,
             transaction_date, source_type, source_id, note, created_by
           ) VALUES (
-            \$1, \$2, 'IN', \$3,
-            'Pcs', \$4, \$3,
-            0, \$3, \$5, \$6,
-            \$7::date, 'INITIAL', \$8, 'Initial product registration stock', \$9
+            \$1, \$2::uuid, 'IN', \$3::numeric,
+            'Pcs', \$4::numeric, \$3::numeric,
+            0, \$3::numeric, \$5::numeric, \$6::numeric,
+            \$7::numeric, \$8::numeric, \$3::numeric,
+            \$9::date, 'INITIAL', \$10, 'Initial product registration stock', \$11
           )
           ''',
           [
@@ -1600,6 +1656,8 @@ class NeonDatabaseService {
             pcsPerCtn,
             pCost,
             totalInitialPieces * pCost,
+            openingCartons,
+            openingLoosePieces,
             txnDate,
             supplierName,
             createdBy,
@@ -1614,8 +1672,11 @@ class NeonDatabaseService {
   }
 
   /// Atomic Stock In / Stock Out operation with strict negative inventory prevention
+  ///
+  /// Supports auto-registering new products on Stock In if not yet registered.
   static Future<InventoryProduct> recordStockMovementDirect({
-    required String productId,
+    String? productId,
+    String? productName,
     required String movementType, // 'IN' or 'OUT'
     required double totalPieces,
     required double unitPrice,
@@ -1634,28 +1695,203 @@ class NeonDatabaseService {
       throw Exception('Quantity must be greater than zero');
     }
 
-    // 1. Fetch current product record
-    final prodRows = await executeSql(
-      'SELECT * FROM store_inventory WHERE id = \$1 LIMIT 1',
-      [productId],
-    );
-    if (prodRows.isEmpty) {
-      throw Exception('Product not found: \$productId');
-    }
-    final prod = prodRows.first;
-    final currentQty = (prod['current_quantity'] is num)
-        ? (prod['current_quantity'] as num).toDouble()
-        : double.tryParse(prod['current_quantity']?.toString() ?? '0') ?? 0.0;
-    final productName = prod['product_name']?.toString() ?? '';
-    final prodStoreId =
-        (storeId != null && storeId.isNotEmpty && storeId != 'all')
-        ? storeId
-        : prod['store_id']?.toString();
-
     final txnDate =
         (transactionDate != null && transactionDate.trim().isNotEmpty)
         ? transactionDate.trim()
         : DateTime.now().toIso8601String().split('T')[0];
+
+    // 1. Resolve product record: by ID, or by Name (fallback/auto-detect)
+    Map<String, dynamic>? prod;
+    if (productId != null && productId.isNotEmpty) {
+      final prodRows = await executeSql(
+        'SELECT * FROM store_inventory WHERE id = \$1::uuid LIMIT 1',
+        [productId],
+      );
+      if (prodRows.isNotEmpty) {
+        prod = prodRows.first;
+      }
+    }
+
+    if (prod == null && productName != null && productName.trim().isNotEmpty) {
+      final clean = productName.trim().toLowerCase();
+      final nameRows = (storeId != null && storeId.isNotEmpty && storeId != 'all')
+          ? await executeSql(
+              '''
+              SELECT * FROM store_inventory
+              WHERE LOWER(TRIM(product_name)) = \$1
+                AND (store_id = \$2 OR store_id IS NULL)
+                AND (is_deleted IS NULL OR is_deleted = FALSE)
+              LIMIT 1
+              ''',
+              [clean, storeId],
+            )
+          : await executeSql(
+              '''
+              SELECT * FROM store_inventory
+              WHERE LOWER(TRIM(product_name)) = \$1
+                AND (is_deleted IS NULL OR is_deleted = FALSE)
+              LIMIT 1
+              ''',
+              [clean],
+            );
+      if (nameRows.isNotEmpty) {
+        prod = nameRows.first;
+      }
+    }
+
+    // If product does not exist yet:
+    if (prod == null) {
+      if (isOut) {
+        throw Exception(
+          'Cannot withdraw product that does not exist in store inventory. (የሌለ እቃ ማውጣት አይቻልም)',
+        );
+      }
+
+      // Auto-register new product on Stock In
+      final cleanName = (productName ?? '').trim();
+      if (cleanName.isEmpty) {
+        throw Exception('Product name cannot be empty');
+      }
+
+      final sku =
+          'SKU-${DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase()}';
+      final factor = pcsPerCarton > 0 ? pcsPerCarton : 1.0;
+      final openingCtns = cartons > 0
+          ? cartons
+          : (factor > 0 ? (qty / factor) : 0.0);
+      final totalVal = qty * unitPrice;
+
+      final insertRows = await executeSql(
+        '''
+        INSERT INTO store_inventory (
+          store_id, product_name, sku, category, base_unit,
+          current_quantity, minimum_stock, unit_price, cost_price,
+          pcs_per_carton, supplier_name, last_transaction_date, description, created_by,
+          quantity_cartons, quantity_per_carton, total_quantity, unit,
+          price_per_piece, total_value, is_active, updated_by
+        ) VALUES (
+          \$1, \$2, \$3, 'General', 'Pcs',
+          \$4::numeric, 0, \$5::numeric, \$5::numeric,
+          \$6::numeric, \$7, \$8, \$9, \$10,
+          \$11::numeric, \$6::numeric, \$4::numeric, 'PCS', \$5::numeric, \$12::numeric, TRUE, \$10
+        )
+        RETURNING *
+        ''',
+        [
+          (storeId != null && storeId != 'all') ? storeId : null,
+          cleanName,
+          sku,
+          qty,
+          unitPrice,
+          factor,
+          party,
+          txnDate,
+          note ?? 'Auto-registered from Store Entry',
+          createdBy,
+          openingCtns,
+          totalVal,
+        ],
+      );
+
+      if (insertRows.isEmpty) {
+        throw Exception('Failed to auto-register product');
+      }
+      prod = insertRows.first;
+
+      final newProduct = InventoryProduct.fromJson(prod);
+
+      // Insert initial stock movement
+      try {
+        await executeSql(
+          '''
+          INSERT INTO stock_movements (
+            store_id, product_id, movement_type, quantity,
+            transaction_unit, conversion_factor, base_quantity,
+            previous_stock, new_stock, unit_price, total_price,
+            cartons, loose_pieces, total_pieces,
+            transaction_date, source_type, source_id, destination,
+            note, created_by
+          ) VALUES (
+            \$1, \$2::uuid, 'IN', \$3::numeric,
+            'Pcs', \$4::numeric, \$3::numeric,
+            0, \$3::numeric, \$5::numeric, \$6::numeric,
+            \$7::numeric, \$8::numeric, \$3::numeric,
+            \$9::date, 'SUPPLIER', \$10, NULL,
+            \$11, \$12
+          )
+          ''',
+          [
+            newProduct.storeId,
+            newProduct.id,
+            qty,
+            factor,
+            unitPrice,
+            totalVal,
+            openingCtns,
+            loosePieces,
+            txnDate,
+            party,
+            note ?? 'Initial stock in from store entry',
+            createdBy,
+          ],
+        );
+      } catch (e) {
+        debugPrint('Warning: stock_movements insert error: \$e');
+      }
+
+      // Sync to ledger_records
+      try {
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        final ledgerId = 'rec-stock-$nowMs-${newProduct.id.substring(0, 4)}';
+        final itemMap = {
+          'id': 'item-$nowMs-1',
+          'name': newProduct.productName,
+          'unitPrice': unitPrice,
+          'quantity': qty,
+          'sign': '+',
+          'customType': 'Goods',
+          'cartons': openingCtns,
+          'pcsPerCarton': factor,
+          'packagingUnit': openingCtns > 0 ? 'Carton' : 'Pcs',
+          'date': txnDate,
+          'notes': note ?? 'Stock In (Incoming)',
+        };
+        final ledgerNotes = party != null && party.isNotEmpty ? 'Supplier: $party' : '';
+
+        await executeSql(
+          '''
+          INSERT INTO ledger_records (
+            id, type, title, date, notes, exchange_rate, items, store_id, created_at, updated_at
+          ) VALUES (
+            \$1, 'stock', \$2, \$3, \$4, 198, \$5::jsonb, \$6, \$7, \$7
+          )
+          ''',
+          [
+            ledgerId,
+            newProduct.productName,
+            txnDate,
+            ledgerNotes,
+            jsonEncode([itemMap]),
+            newProduct.storeId,
+            nowMs,
+          ],
+        );
+      } catch (e) {
+        debugPrint('Warning: ledger_records stock sync: \$e');
+      }
+
+      return newProduct;
+    }
+
+    final targetProductId = prod['id'].toString();
+    final currentQty = (prod['current_quantity'] is num)
+        ? (prod['current_quantity'] as num).toDouble()
+        : double.tryParse(prod['current_quantity']?.toString() ?? '0') ?? 0.0;
+    final resolvedProdName = prod['product_name']?.toString() ?? '';
+    final prodStoreId =
+        (storeId != null && storeId.isNotEmpty && storeId != 'all')
+        ? storeId
+        : prod['store_id']?.toString();
 
     final totalPrice = double.parse((qty * unitPrice).toStringAsFixed(2));
     final conversion = pcsPerCarton > 0
@@ -1667,47 +1903,65 @@ class NeonDatabaseService {
     // 2. Strict Stock Out Check before DB write
     if (isOut && qty > currentQty) {
       throw Exception(
-        'Insufficient stock! Available quantity: ${currentQty.toInt()} pieces. You cannot withdraw ${qty.toInt()} pieces.',
+        'Insufficient stock! Available quantity: ${currentQty.toInt()} pieces. You cannot withdraw ${qty.toInt()} pieces. (በቂ እቃ የለም!)',
       );
     }
 
-    // 3. Atomic Database Update
+    // 3. Atomic Database Update with explicit ::numeric casts (Fixes 22P02 invalid input syntax for type integer: "200.0")
     List<Map<String, dynamic>> updatedRows;
     if (isOut) {
       updatedRows = await executeSql(
         '''
         UPDATE store_inventory
-        SET current_quantity = current_quantity - \$1,
-            unit_price = CASE WHEN \$2 > 0 THEN \$2 ELSE unit_price END,
+        SET current_quantity = current_quantity - \$1::numeric,
+            total_quantity = GREATEST(0, COALESCE(total_quantity, current_quantity) - \$1::numeric),
+            quantity_cartons = CASE
+              WHEN COALESCE(pcs_per_carton, quantity_per_carton, 1) > 0
+                THEN ROUND(GREATEST(0, current_quantity - \$1::numeric) / COALESCE(pcs_per_carton, quantity_per_carton, 1), 3)
+              ELSE quantity_cartons
+            END,
+            unit_price = CASE WHEN \$2::numeric > 0 THEN \$2::numeric ELSE unit_price END,
+            price_per_piece = CASE WHEN \$2::numeric > 0 THEN \$2::numeric ELSE price_per_piece END,
+            total_value = ROUND(GREATEST(0, current_quantity - \$1::numeric) * CASE WHEN \$2::numeric > 0 THEN \$2::numeric ELSE unit_price END, 2),
             last_transaction_date = \$3,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = \$4 AND current_quantity >= \$1
-        RETURNING *, (current_quantity + \$1) AS previous_qty
+        WHERE id = \$4::uuid AND current_quantity >= \$1::numeric
+        RETURNING *, (current_quantity + \$1::numeric) AS previous_qty
         ''',
-        [qty, unitPrice, txnDate, productId],
+        [qty, unitPrice, txnDate, targetProductId],
       );
     } else {
       updatedRows = await executeSql(
         '''
         UPDATE store_inventory
-        SET current_quantity = current_quantity + \$1,
-            cost_price = CASE WHEN \$2 > 0 THEN \$2 ELSE cost_price END,
-            pcs_per_carton = CASE WHEN \$3 > 0 THEN \$3 ELSE pcs_per_carton END,
+        SET current_quantity = current_quantity + \$1::numeric,
+            total_quantity = COALESCE(total_quantity, current_quantity) + \$1::numeric,
+            quantity_cartons = CASE
+              WHEN COALESCE(\$3::numeric, pcs_per_carton, 1) > 0
+                THEN ROUND((current_quantity + \$1::numeric) / COALESCE(\$3::numeric, pcs_per_carton, 1), 3)
+              ELSE quantity_cartons
+            END,
+            cost_price = CASE WHEN \$2::numeric > 0 THEN \$2::numeric ELSE cost_price END,
+            unit_price = CASE WHEN \$2::numeric > 0 AND unit_price <= 0 THEN \$2::numeric ELSE unit_price END,
+            pcs_per_carton = CASE WHEN \$3::numeric > 0 THEN \$3::numeric ELSE pcs_per_carton END,
+            quantity_per_carton = CASE WHEN \$3::numeric > 0 THEN \$3::numeric ELSE quantity_per_carton END,
             supplier_name = COALESCE(\$4, supplier_name),
+            price_per_piece = CASE WHEN \$2::numeric > 0 THEN \$2::numeric ELSE price_per_piece END,
+            total_value = ROUND((current_quantity + \$1::numeric) * CASE WHEN unit_price > 0 THEN unit_price ELSE CASE WHEN \$2::numeric > 0 THEN \$2::numeric ELSE cost_price END END, 2),
             last_transaction_date = \$5,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = \$6
-        RETURNING *, (current_quantity - \$1) AS previous_qty
+        WHERE id = \$6::uuid
+        RETURNING *, (current_quantity - \$1::numeric) AS previous_qty
         ''',
-        [qty, unitPrice, conversion, party, txnDate, productId],
+        [qty, unitPrice, conversion, party, txnDate, targetProductId],
       );
     }
 
     if (updatedRows.isEmpty) {
       if (isOut) {
         final freshRows = await executeSql(
-          'SELECT current_quantity FROM store_inventory WHERE id = \$1',
-          [productId],
+          'SELECT current_quantity FROM store_inventory WHERE id = \$1::uuid',
+          [targetProductId],
         );
         final freshQty = freshRows.isNotEmpty
             ? ((freshRows.first['current_quantity'] is num)
@@ -1736,19 +1990,21 @@ class NeonDatabaseService {
           store_id, product_id, movement_type, quantity,
           transaction_unit, conversion_factor, base_quantity,
           previous_stock, new_stock, unit_price, total_price,
+          cartons, loose_pieces, total_pieces,
           transaction_date, source_type, source_id, destination,
           note, created_by
         ) VALUES (
-          \$1, \$2, \$3, \$4,
-          'Pcs', \$5, \$4,
-          \$6, \$7, \$8, \$9,
-          \$10::date, \$11, \$12, \$13,
-          \$14, \$15
+          \$1, \$2::uuid, \$3, \$4::numeric,
+          'Pcs', \$5::numeric, \$4::numeric,
+          \$6::numeric, \$7::numeric, \$8::numeric, \$9::numeric,
+          \$10::numeric, \$11::numeric, \$12::numeric,
+          \$13::date, \$14, \$15, \$16,
+          \$17, \$18
         )
         ''',
         [
           prodStoreId,
-          productId,
+          targetProductId,
           isOut ? 'OUT' : 'IN',
           qty,
           conversion,
@@ -1756,6 +2012,9 @@ class NeonDatabaseService {
           updatedProd.currentQuantity,
           unitPrice,
           totalPrice,
+          cartons,
+          loosePieces,
+          qty,
           txnDate,
           isOut ? 'CUSTOMER' : 'SUPPLIER',
           isOut ? null : party,
@@ -1771,10 +2030,10 @@ class NeonDatabaseService {
     // 5. Also sync to ledger_records table for unified reporting
     try {
       final nowMs = DateTime.now().millisecondsSinceEpoch;
-      final ledgerId = 'rec-stock-$nowMs-${productId.substring(0, 4)}';
+      final ledgerId = 'rec-stock-$nowMs-${targetProductId.substring(0, 4)}';
       final itemMap = {
         'id': 'item-$nowMs-1',
-        'name': productName,
+        'name': resolvedProdName,
         'unitPrice': unitPrice,
         'quantity': qty,
         'sign': isOut ? '-' : '+',
@@ -1800,7 +2059,7 @@ class NeonDatabaseService {
         ''',
         [
           ledgerId,
-          productName,
+          resolvedProdName,
           txnDate,
           ledgerNotes,
           jsonEncode([itemMap]),
@@ -1824,7 +2083,7 @@ class NeonDatabaseService {
       SELECT sm.*, u.name AS user_name
       FROM stock_movements sm
       LEFT JOIN users u ON u.id = sm.created_by
-      WHERE sm.product_id = \$1
+      WHERE sm.product_id = \$1::uuid
       ORDER BY sm.created_at DESC, sm.id DESC
       ''',
       [productId],
@@ -1860,33 +2119,33 @@ class NeonDatabaseService {
       '''
       UPDATE store_inventory SET
         product_name = COALESCE(\$1, product_name),
-        unit_price = COALESCE(\$2, unit_price),
-        cost_price = COALESCE(\$3, cost_price),
-        pcs_per_carton = COALESCE(\$4, pcs_per_carton),
-        quantity_per_carton = COALESCE(\$4, quantity_per_carton),
-        quantity_cartons = COALESCE(\$5, quantity_cartons),
-        minimum_stock = COALESCE(\$6, minimum_stock),
+        unit_price = COALESCE(\$2::numeric, unit_price),
+        cost_price = COALESCE(\$3::numeric, cost_price),
+        pcs_per_carton = COALESCE(\$4::numeric, pcs_per_carton),
+        quantity_per_carton = COALESCE(\$4::numeric, quantity_per_carton),
+        quantity_cartons = COALESCE(\$5::numeric, quantity_cartons),
+        minimum_stock = COALESCE(\$6::numeric, minimum_stock),
         category = COALESCE(\$7, category),
         supplier_name = COALESCE(\$8, supplier_name),
         description = COALESCE(\$9, description),
         updated_by = COALESCE(\$11, updated_by),
         is_active = COALESCE(\$12, is_active),
         current_quantity = CASE
-          WHEN \$5 IS NOT NULL THEN \$5::DECIMAL * COALESCE(\$4, quantity_per_carton)
+          WHEN \$5 IS NOT NULL THEN \$5::numeric * COALESCE(\$4::numeric, quantity_per_carton)
           ELSE current_quantity
         END,
         total_quantity = CASE
-          WHEN \$5 IS NOT NULL THEN \$5::DECIMAL * COALESCE(\$4, quantity_per_carton)
+          WHEN \$5 IS NOT NULL THEN \$5::numeric * COALESCE(\$4::numeric, quantity_per_carton)
           ELSE total_quantity
         END,
-        price_per_piece = COALESCE(\$2, price_per_piece),
+        price_per_piece = COALESCE(\$2::numeric, price_per_piece),
         total_value = CASE
           WHEN \$5 IS NOT NULL
-            THEN ROUND(\$5::DECIMAL * COALESCE(\$4, quantity_per_carton) * COALESCE(\$2, unit_price), 2)
-          ELSE ROUND(COALESCE(total_quantity, current_quantity) * COALESCE(\$2, unit_price), 2)
+            THEN ROUND(\$5::numeric * COALESCE(\$4::numeric, quantity_per_carton) * COALESCE(\$2::numeric, unit_price), 2)
+          ELSE ROUND(COALESCE(total_quantity, current_quantity) * COALESCE(\$2::numeric, unit_price), 2)
         END,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = \$10
+      WHERE id = \$10::uuid
       RETURNING *
       ''',
       [

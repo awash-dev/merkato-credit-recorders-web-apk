@@ -5,10 +5,17 @@ import '../models/inventory_product.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/language_service.dart';
-import 'new_product_dialog.dart';
 import '../services/ethiopian_calendar.dart';
 
 /// Reusable Store Entry Dialog for Stock In (+) and Stock Out (-)
+///
+/// Supports:
+/// - Instant auto-fill of saved DB records for existing products (all fields editable)
+/// - Seamless auto-save / auto-registration for new products directly on Stock In
+///   without forcing the user to open a separate registration form
+/// - Smart merging into existing stock balances for recorded products
+/// - Real-time calculation of Total Pieces and Total Value
+/// - Strict protection against negative inventory on Stock Out
 class StockTransactionDialog extends StatefulWidget {
   final AppUser currentUser;
   final String? activeStoreId;
@@ -49,7 +56,6 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
 
   bool _isSaving = false;
   String? _errorMessage;
-  bool _productNotFound = false;
 
   final _currencyFormat = NumberFormat('#,##0.00', 'en_US');
 
@@ -121,28 +127,70 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
     });
   }
 
-  void _applyProduct(InventoryProduct prod) {
+  /// Populate fields from existing product record and fetch latest DB state
+  void _applyProduct(InventoryProduct prod, {bool fetchFromDb = true}) async {
+    final pcs = prod.pcsPerCarton > 0
+        ? (prod.pcsPerCarton % 1 == 0
+            ? prod.pcsPerCarton.toInt().toString()
+            : prod.pcsPerCarton.toString())
+        : '1';
+
+    final price = _movementType == 'OUT'
+        ? (prod.unitPrice > 0 ? prod.unitPrice : prod.costPrice)
+        : (prod.costPrice > 0 ? prod.costPrice : prod.unitPrice);
+
     setState(() {
       _selectedProduct = prod;
-      _productNameController.text = LanguageService.translateProduct(prod.productName);
-      final pcs = prod.pcsPerCarton > 0 ? prod.pcsPerCarton.toInt() : 1;
-      _pcsPerCartonController.text = '$pcs';
-
-      final price = _movementType == 'OUT'
-          ? (prod.unitPrice > 0 ? prod.unitPrice : prod.costPrice)
-          : (prod.costPrice > 0 ? prod.costPrice : prod.unitPrice);
-      _unitPriceController.text = price > 0 ? price.toStringAsFixed(2) : '0.00';
-      _productNotFound = false;
+      _productNameController.text = prod.productName;
+      _pcsPerCartonController.text = pcs;
+      _unitPriceController.text = price > 0
+          ? (price % 1 == 0 ? price.toInt().toString() : price.toStringAsFixed(2))
+          : '0.00';
+      if (_partyController.text.isEmpty &&
+          prod.supplierName != null &&
+          prod.supplierName!.isNotEmpty) {
+        _partyController.text = prod.supplierName!;
+      }
       _errorMessage = null;
     });
+
+    if (fetchFromDb && prod.id.isNotEmpty) {
+      try {
+        final fresh = await ApiService.getProductById(prod.id);
+        if (fresh != null && mounted && _selectedProduct?.id == prod.id) {
+          final freshPcs = fresh.pcsPerCarton > 0
+              ? (fresh.pcsPerCarton % 1 == 0
+                  ? fresh.pcsPerCarton.toInt().toString()
+                  : fresh.pcsPerCarton.toString())
+              : '1';
+          final freshPrice = _movementType == 'OUT'
+              ? (fresh.unitPrice > 0 ? fresh.unitPrice : fresh.costPrice)
+              : (fresh.costPrice > 0 ? fresh.costPrice : fresh.unitPrice);
+
+          setState(() {
+            _selectedProduct = fresh;
+            _productNameController.text = fresh.productName;
+            _pcsPerCartonController.text = freshPcs;
+            if (_unitPriceController.text.isEmpty ||
+                _unitPriceController.text == '0.00' ||
+                _unitPriceController.text == '0') {
+              _unitPriceController.text = freshPrice > 0
+                  ? (freshPrice % 1 == 0
+                      ? freshPrice.toInt().toString()
+                      : freshPrice.toStringAsFixed(2))
+                  : '0.00';
+            }
+          });
+        }
+      } catch (_) {}
+    }
   }
 
-  void _onProductNameChanged(String query) {
+  void _onProductNameChanged(String query) async {
     final clean = query.trim().toLowerCase();
     if (clean.isEmpty) {
       setState(() {
         _selectedProduct = null;
-        _productNotFound = false;
       });
       return;
     }
@@ -155,10 +203,21 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
 
     if (match.isNotEmpty) {
       _applyProduct(match.first);
-    } else {
+      return;
+    }
+
+    // Try live lookup in DB
+    try {
+      final dbProd = await ApiService.getProductByName(clean, widget.activeStoreId);
+      if (dbProd != null && mounted && _productNameController.text.trim().toLowerCase() == clean) {
+        _applyProduct(dbProd, fetchFromDb: false);
+        return;
+      }
+    } catch (_) {}
+
+    if (mounted) {
       setState(() {
         _selectedProduct = null;
-        _productNotFound = true;
       });
     }
   }
@@ -201,16 +260,26 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
 
   /// Validation: Stock Out cannot exceed available pieces
   bool get _isStockOutExceeded =>
-      _isStockOut && _totalPieces > _availablePieces;
+      _isStockOut && (_selectedProduct == null || _totalPieces > _availablePieces);
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_selectedProduct == null) {
+    final trimmedName = _productNameController.text.trim();
+    if (trimmedName.isEmpty) {
       setState(() {
         _errorMessage = widget.isAmharic
-            ? 'እባክዎ የተመዘገበ ምርት ይምረጡ ወይም አዲስ ይመዝግቡ'
-            : 'Please select a registered product or register a new one';
+            ? 'እባክዎ የዕቃ ስም ያስገቡ'
+            : 'Please enter a product name';
+      });
+      return;
+    }
+
+    if (_isStockOut && _selectedProduct == null) {
+      setState(() {
+        _errorMessage = widget.isAmharic
+            ? 'ምርቱ በመደብር ውስጥ አልተገኘም። ወጪ ለማድረግ አስቀድሞ ገቢ መመዝገብ አለበት።'
+            : 'Product not found in store inventory. Must stock in before stocking out.';
       });
       return;
     }
@@ -243,7 +312,8 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
       final loosePieces = _packaging == 'Piece' ? _enteredQty : 0.0;
 
       final updated = await ApiService.recordStockMovement(
-        productId: _selectedProduct!.id,
+        productId: _selectedProduct?.id,
+        productName: trimmedName,
         movementType: _movementType,
         totalPieces: _totalPieces,
         unitPrice: _unitPrice,
@@ -256,7 +326,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
             '${_selectedDate.year.toString().padLeft(4, '0')}-'
             '${_selectedDate.month.toString().padLeft(2, '0')}-'
             '${_selectedDate.day.toString().padLeft(2, '0')}',
-        storeId: _selectedProduct!.storeId ?? widget.activeStoreId,
+        storeId: _selectedProduct?.storeId ?? widget.activeStoreId,
         createdBy: widget.currentUser.id,
       );
 
@@ -273,27 +343,17 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
     }
   }
 
-  void _openNewProduct() async {
-    final result = await showDialog<InventoryProduct>(
-      context: context,
-      builder: (ctx) => NewProductDialog(
-        currentUser: widget.currentUser,
-        activeStoreId: widget.activeStoreId,
-        isAmharic: widget.isAmharic,
-      ),
-    );
-
-    if (result != null && mounted) {
-      _applyProduct(result);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    const inputFillColor = Color(0xFFF8FAFC); // Light grey input background
-    const inputBorderColor = Color(0xFFE2E8F0); // Thin grey border
-    const primaryTextColor = Color(0xFF0F172A); // Dark text
-    const labelTextColor = Color(0xFF475569); // Dark grey label
+    const inputFillColor = Color(0xFFF8FAFC);
+    const inputBorderColor = Color(0xFFE2E8F0);
+    const primaryTextColor = Color(0xFF0F172A);
+    const labelTextColor = Color(0xFF475569);
+
+    final canSubmit = !_isSaving &&
+        _productNameController.text.trim().isNotEmpty &&
+        _totalPieces > 0 &&
+        !(_isStockOut && (_selectedProduct == null || _isStockOutExceeded));
 
     return Dialog(
       backgroundColor: Colors.white,
@@ -364,7 +424,9 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                                 final p = _selectedProduct!.costPrice > 0
                                     ? _selectedProduct!.costPrice
                                     : _selectedProduct!.unitPrice;
-                                _unitPriceController.text = p > 0 ? p.toStringAsFixed(2) : '0.00';
+                                _unitPriceController.text = p > 0
+                                    ? (p % 1 == 0 ? p.toInt().toString() : p.toStringAsFixed(2))
+                                    : '0.00';
                               }
                             });
                           },
@@ -422,7 +484,9 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                                 final p = _selectedProduct!.unitPrice > 0
                                     ? _selectedProduct!.unitPrice
                                     : _selectedProduct!.costPrice;
-                                _unitPriceController.text = p > 0 ? p.toStringAsFixed(2) : '0.00';
+                                _unitPriceController.text = p > 0
+                                    ? (p % 1 == 0 ? p.toInt().toString() : p.toStringAsFixed(2))
+                                    : '0.00';
                               }
                             });
                           },
@@ -504,8 +568,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                   ),
                   const SizedBox(height: 4),
                   Autocomplete<InventoryProduct>(
-                    displayStringForOption: (prod) =>
-                        LanguageService.translateProduct(prod.productName),
+                    displayStringForOption: (prod) => prod.productName,
                     initialValue: TextEditingValue(text: _productNameController.text),
                     optionsBuilder: (textEditingValue) {
                       final q = textEditingValue.text.trim().toLowerCase();
@@ -533,10 +596,10 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                           color: primaryTextColor,
                         ),
                         decoration: InputDecoration(
-                          hintText: widget.isAmharic ? 'ዕቃ ይፈልጉ...' : 'Search product...',
+                          hintText: widget.isAmharic ? 'ዕቃ ይፈልጉ ወይም አዲስ ስም ያስገቡ...' : 'Search product or enter new name...',
                           hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
                           prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
-                          suffixIcon: _selectedProduct != null
+                          suffixIcon: _productNameController.text.isNotEmpty
                               ? IconButton(
                                   icon: const Icon(Icons.clear, size: 16),
                                   onPressed: () {
@@ -544,7 +607,6 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                                     _productNameController.clear();
                                     setState(() {
                                       _selectedProduct = null;
-                                      _productNotFound = false;
                                     });
                                   },
                                 )
@@ -572,47 +634,12 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                       );
                     },
                   ),
-
-                  // Prompt to register new product if not found
-                  if (_productNotFound && _selectedProduct == null && _productNameController.text.trim().isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEFF6FF),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFBFDBFE)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.info_outline, size: 16, color: Color(0xFF2563EB)),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                widget.isAmharic
-                                    ? '"${_productNameController.text.trim()}" አልተገኘም። አዲስ ምርት መመዝገብ ይፈልጋሉ?'
-                                    : '"${_productNameController.text.trim()}" not found. Register as new product?',
-                                style: const TextStyle(fontSize: 11, color: Color(0xFF1E40AF)),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: _openNewProduct,
-                              child: Text(
-                                widget.isAmharic ? '+ አዲስ ምርት' : '+ Register',
-                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   const SizedBox(height: 10),
 
-                  // --- 4. CURRENT AVAILABLE STOCK PANEL (Immediately below Item field) ---
-                  if (_selectedProduct != null)
+                  // --- 4. CURRENT AVAILABLE STOCK PANEL (For Existing Products) ---
+                  if (_selectedProduct != null) ...[
+                    const SizedBox(height: 8),
                     Container(
-                      margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF1F5F9),
@@ -626,7 +653,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                LanguageService.translateProduct(_selectedProduct!.productName),
+                                _selectedProduct!.productName,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w900,
                                   fontSize: 14,
@@ -662,7 +689,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                                 style: const TextStyle(fontSize: 11, color: labelTextColor, fontWeight: FontWeight.w600),
                               ),
                               Text(
-                                '${widget.isAmharic ? "የአንዱ ዋጋ" : "Unit Price"}: ${_currencyFormat.format(_selectedProduct!.unitPrice)} ${widget.isAmharic ? "ብር" : "ETB"}',
+                                '${widget.isAmharic ? "የአንዱ ዋጋ" : "Unit Price"}: ${_currencyFormat.format(_selectedProduct!.unitPrice > 0 ? _selectedProduct!.unitPrice : _selectedProduct!.costPrice)} ${widget.isAmharic ? "ብር" : "ETB"}',
                                 style: const TextStyle(fontSize: 11, color: labelTextColor, fontWeight: FontWeight.w600),
                               ),
                             ],
@@ -670,6 +697,8 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                         ],
                       ),
                     ),
+                  ],
+                  const SizedBox(height: 12),
 
                   // --- 5. QUANTITY & PACKAGING SELECTION ---
                   Row(
@@ -833,6 +862,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                         color: primaryTextColor,
                       ),
                       decoration: InputDecoration(
+                        hintText: '1',
                         filled: true,
                         fillColor: inputFillColor,
                         border: OutlineInputBorder(
@@ -869,9 +899,13 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              widget.isAmharic
-                                  ? 'በቂ እቃ የለም! በመደብሩ ያለው መጠን ${_availablePieces.toInt()} ፍሬ ብቻ ነው። ከዚህ በላይ ማውጣት አይቻልም።'
-                                  : 'Insufficient stock! Available quantity: ${_availablePieces.toInt()} pieces. Cannot exceed available inventory.',
+                              _selectedProduct == null
+                                  ? (widget.isAmharic
+                                      ? 'ምርቱ በመደብር ውስጥ አልተገኘም (የሌለ እቃ ማውጣት አይቻልም)'
+                                      : 'Product not found in store (cannot stock out non-existent item)')
+                                  : (widget.isAmharic
+                                      ? 'በቂ እቃ የለም! በመደብሩ ያለው መጠን ${_availablePieces.toInt()} ፍሬ ብቻ ነው። ከዚህ በላይ ማውጣት አይቻልም።'
+                                      : 'Insufficient stock! Available quantity: ${_availablePieces.toInt()} pieces. Cannot exceed available inventory.'),
                               style: const TextStyle(
                                 fontSize: 11.5,
                                 color: Color(0xFF991B1B),
@@ -979,7 +1013,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                   ),
                   const SizedBox(height: 20),
 
-                  // --- 7. ACTION BUTTONS (Save & Cancel) ---
+                  // --- 8. ACTION BUTTONS (Save & Cancel) ---
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
@@ -996,9 +1030,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton.icon(
-                        onPressed: (_isSaving || _isStockOutExceeded || _selectedProduct == null || _totalPieces <= 0)
-                            ? null
-                            : _submit,
+                        onPressed: canSubmit ? _submit : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _isStockOut ? const Color(0xFFDC2626) : const Color(0xFF2563EB),
                           foregroundColor: Colors.white,

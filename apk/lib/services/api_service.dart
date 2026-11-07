@@ -457,7 +457,11 @@ class ApiService {
       storeName: storeName,
       entries: computedEntries,
       payments: computedEntries
-          .where((e) => (type == 'customer' || type == 'delala') ? e.credit > 0 : e.debit > 0)
+          .where(
+            (e) => (type == 'customer' || type == 'delala')
+                ? e.credit > 0
+                : e.debit > 0,
+          )
           .map(
             (e) => StatementPayment(
               date: e.date,
@@ -552,6 +556,17 @@ class ApiService {
     );
   }
 
+  static Future<InventoryProduct?> getProductById(String id) async {
+    return await NeonDatabaseService.getProductByIdDirect(id);
+  }
+
+  static Future<InventoryProduct?> getProductByName(
+    String name, [
+    String? storeId,
+  ]) async {
+    return await NeonDatabaseService.getProductByNameDirect(name, storeId);
+  }
+
   static Future<bool> checkProductExists(
     String productName,
     String? storeId,
@@ -595,7 +610,8 @@ class ApiService {
   }
 
   static Future<InventoryProduct> recordStockMovement({
-    required String productId,
+    String? productId,
+    String? productName,
     required String movementType, // 'IN' or 'OUT'
     required double totalPieces,
     required double unitPrice,
@@ -610,6 +626,7 @@ class ApiService {
   }) async {
     return await NeonDatabaseService.recordStockMovementDirect(
       productId: productId,
+      productName: productName,
       movementType: movementType,
       totalPieces: totalPieces,
       unitPrice: unitPrice,

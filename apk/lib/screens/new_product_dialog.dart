@@ -116,15 +116,64 @@ class _NewProductDialogState extends State<NewProductDialog> {
       double.tryParse(_unitPriceController.text.trim()) ?? 0.0;
   double get _totalValue => _totalInitialPieces * _unitPrice;
 
-  void _selectSuggestion(InventoryProduct product) {
+  void _selectSuggestion(InventoryProduct product) async {
+    final pcs = product.pcsPerCarton > 0
+        ? (product.pcsPerCarton % 1 == 0
+            ? product.pcsPerCarton.toInt().toString()
+            : product.pcsPerCarton.toString())
+        : '1';
+    final price = product.unitPrice > 0
+        ? (product.unitPrice % 1 == 0
+            ? product.unitPrice.toInt().toString()
+            : product.unitPrice.toString())
+        : (product.costPrice > 0
+            ? (product.costPrice % 1 == 0
+                ? product.costPrice.toInt().toString()
+                : product.costPrice.toString())
+            : '');
+    final minStock = product.minimumStock % 1 == 0
+        ? product.minimumStock.toInt().toString()
+        : product.minimumStock.toString();
+
     _nameController.text = product.productName;
-    _pcsPerCartonController.text =
-        '${product.pcsPerCarton > 0 ? product.pcsPerCarton : 1}';
-    _unitPriceController.text = product.unitPrice > 0
-        ? '${product.unitPrice}'
-        : '';
-    _minStockController.text = '${product.minimumStock}';
+    _pcsPerCartonController.text = pcs;
+    _unitPriceController.text = price;
+    _minStockController.text = minStock;
+    _openingCartonsController.text = '0';
     setState(() => _suggestions = []);
+
+    // Fetch fresh database record to ensure latest saved data
+    if (product.id.isNotEmpty) {
+      try {
+        final fresh = await ApiService.getProductById(product.id);
+        if (fresh != null && mounted) {
+          final freshPcs = fresh.pcsPerCarton > 0
+              ? (fresh.pcsPerCarton % 1 == 0
+                  ? fresh.pcsPerCarton.toInt().toString()
+                  : fresh.pcsPerCarton.toString())
+              : '1';
+          final freshPrice = fresh.unitPrice > 0
+              ? (fresh.unitPrice % 1 == 0
+                  ? fresh.unitPrice.toInt().toString()
+                  : fresh.unitPrice.toString())
+              : (fresh.costPrice > 0
+                  ? (fresh.costPrice % 1 == 0
+                      ? fresh.costPrice.toInt().toString()
+                      : fresh.costPrice.toString())
+                  : '');
+          final freshMin = fresh.minimumStock % 1 == 0
+              ? fresh.minimumStock.toInt().toString()
+              : fresh.minimumStock.toString();
+
+          setState(() {
+            _nameController.text = fresh.productName;
+            _pcsPerCartonController.text = freshPcs;
+            _unitPriceController.text = freshPrice;
+            _minStockController.text = freshMin;
+          });
+        }
+      } catch (_) {}
+    }
   }
 
   String get _displayDate {
