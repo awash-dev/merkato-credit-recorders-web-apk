@@ -5,12 +5,14 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'models/user.dart';
 import 'services/api_service.dart';
 import 'services/language_service.dart';
+import 'services/app_settings_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await LanguageService.init();
+  await AppSettingsService.init();
 
   // Protect against blank white screen: register custom error widget
   ErrorWidget.builder = (FlutterErrorDetails details) {

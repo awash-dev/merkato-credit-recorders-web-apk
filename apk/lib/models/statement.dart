@@ -1,4 +1,6 @@
 class StatementEntry {
+  final String? id;
+  final String? recordId;
   final String date;
   final String description;
   final double quantity;
@@ -12,6 +14,8 @@ class StatementEntry {
   final String? notes;
 
   StatementEntry({
+    this.id,
+    this.recordId,
     required this.date,
     required this.description,
     required this.quantity,
@@ -27,6 +31,8 @@ class StatementEntry {
 
   factory StatementEntry.fromJson(Map<String, dynamic> json) {
     return StatementEntry(
+      id: json['id']?.toString(),
+      recordId: json['recordId']?.toString(),
       date: json['date']?.toString() ?? '',
       description: json['description']?.toString() ?? '',
       quantity: (json['quantity'] as num?)?.toDouble() ?? 0.0,

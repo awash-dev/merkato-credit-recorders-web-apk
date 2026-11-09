@@ -1,4 +1,6 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -8,6 +10,8 @@ import 'package:printing/printing.dart';
 import '../models/statement.dart';
 import '../services/api_service.dart';
 import '../services/language_service.dart';
+import '../services/app_settings_service.dart';
+import '../services/ethiopian_calendar.dart';
 import '../widgets/telebirr_background.dart';
 
 class StatementScreen extends StatefulWidget {
@@ -32,11 +36,49 @@ class _StatementScreenState extends State<StatementScreen> {
   AccountStatement? _statement;
   bool _isLoading = true;
   String? _error;
+  final GlobalKey _tableKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
     _loadStatement();
+  }
+
+  /// Converts a Gregorian YYYY-MM-DD or standard date string into an authentic Ethiopian calendar date
+  String _formatEthiopianDate(String rawDate) {
+    if (rawDate.isEmpty) return '';
+    try {
+      for (final m in EthiopianCalendar.monthsAm) {
+        if (m.isNotEmpty && rawDate.contains(m)) return rawDate;
+      }
+      for (final m in EthiopianCalendar.monthsEn) {
+        if (m.isNotEmpty && rawDate.contains(m)) return rawDate;
+      }
+
+      final parts = rawDate.split(RegExp(r'[-/]'));
+      if (parts.length == 3) {
+        final p0 = int.tryParse(parts[0]);
+        final p1 = int.tryParse(parts[1]);
+        final p2 = int.tryParse(parts[2]);
+        if (p0 != null && p1 != null && p2 != null) {
+          if (p0 > 1900 && p0 <= 2100) {
+            final eth = EthiopianCalendar.toEthiopian(p0, p1, p2);
+            return EthiopianCalendar.formatDisplay(eth, lang: _isAmharic ? 'am' : 'en');
+          }
+          if (p2 > 1900 && p2 <= 2100) {
+            final eth = EthiopianCalendar.toEthiopian(p2, p1, p0);
+            return EthiopianCalendar.formatDisplay(eth, lang: _isAmharic ? 'am' : 'en');
+          }
+        }
+      }
+
+      final dt = DateTime.tryParse(rawDate);
+      if (dt != null) {
+        final eth = EthiopianCalendar.toEthiopian(dt.year, dt.month, dt.day);
+        return EthiopianCalendar.formatDisplay(eth, lang: _isAmharic ? 'am' : 'en');
+      }
+    } catch (_) {}
+    return rawDate;
   }
 
   Future<void> _loadStatement() async {
@@ -67,11 +109,454 @@ class _StatementScreenState extends State<StatementScreen> {
     }
   }
 
-  Future<void> _printOrExportPdf() async {
+  /// Captures ONLY the table widget as a clean screenshot image and prints or shares it
+  Future<void> _captureTableScreenshot({bool share = true}) async {
+    try {
+      final boundary =
+          _tableKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return;
+      final pngBytes = byteData.buffer.asUint8List();
+
+      final pdf = pw.Document();
+      final pdfImage = pw.MemoryImage(pngBytes);
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(20),
+          build: (pw.Context context) {
+            return pw.Center(
+              child: pw.Image(pdfImage, fit: pw.BoxFit.contain),
+            );
+          },
+        ),
+      );
+      final pdfBytes = await pdf.save();
+
+      if (share) {
+        await Printing.sharePdf(
+          bytes: pdfBytes,
+          filename: 'table-${widget.accountName.replaceAll(' ', '_')}.pdf',
+        );
+      } else {
+        await Printing.layoutPdf(
+          onLayout: (format) async => pdfBytes,
+          name: 'table-${widget.accountName.replaceAll(' ', '_')}.pdf',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Screenshot capture: $e')),
+        );
+      }
+    }
+  }
+
+  /// Opens social media sharing sheet for PDF, Table Screenshot, or Text
+  Future<void> _shareStatement() async {
+    if (_statement == null) return;
+    final st = _statement!;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        final cardColor = isDark ? const Color(0xFF1B2234) : Colors.white;
+
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade400,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(
+                _isAmharic ? 'መግለጫውን አጋራ' : 'Share Statement',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 14),
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf, color: Color(0xFFDC2626)),
+                title: Text(_isAmharic ? 'ሙሉ ፒዲኤፍ አጋራ' : 'Share Full PDF Document'),
+                subtitle: Text(
+                  _isAmharic
+                      ? 'በዋትስአፕ፣ ቴሌግራም ወይም ኢሜል'
+                      : 'Via WhatsApp, Telegram, or Email',
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _printOrExportPdf(shareOnly: true);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: Color(0xFF2563EB)),
+                title: Text(
+                  _isAmharic
+                      ? 'የሠንጠረዥ ስክሪንሾት አጋራ'
+                      : 'Share Table Screenshot (Only Table)',
+                ),
+                subtitle: Text(
+                  _isAmharic
+                      ? 'የኤክሴል ሠንጠረዥ ምስል ብቻ'
+                      : 'Clean image snapshot of the Excel table',
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _captureTableScreenshot(share: true);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.chat_bubble_outline, color: Color(0xFF16A34A)),
+                title: Text(_isAmharic ? 'የጽሑፍ ማጠቃለያ አጋራ' : 'Share Text Summary'),
+                subtitle: Text(
+                  _isAmharic
+                      ? 'ቀሪ ሂሳብ እና ጠቅላላ ድምር'
+                      : 'Quick balance & totals summary',
+                ),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final pdf = pw.Document();
+                  pdf.addPage(
+                    pw.Page(
+                      pageFormat: PdfPageFormat.a4,
+                      build: (pw.Context context) {
+                        return pw.Padding(
+                          padding: const pw.EdgeInsets.all(30),
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text(
+                                AppSettingsService.appTitleNotifier.value,
+                                style: pw.TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
+                              pw.SizedBox(height: 10),
+                              pw.Text(
+                                'Account: ${st.accountName}',
+                                style: const pw.TextStyle(fontSize: 14),
+                              ),
+                              pw.SizedBox(height: 6),
+                              pw.Text(
+                                'Total Debit: ETB ${_currencyFormat.format(st.totals.totalDebit)}',
+                              ),
+                              pw.Text(
+                                'Total Credit: ETB ${_currencyFormat.format(st.totals.totalCredit)}',
+                              ),
+                              pw.SizedBox(height: 8),
+                              pw.Text(
+                                'Outstanding Balance: ETB ${_currencyFormat.format(st.totals.outstanding)}',
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                  fontSize: 16,
+                                  color: PdfColors.red900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                  await Printing.sharePdf(
+                    bytes: await pdf.save(),
+                    filename: 'summary-${st.accountName.replaceAll(' ', '_')}.pdf',
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Opens an interactive Excel-style modal row editor upon clicking any statement row
+  Future<void> _openExcelRowEditor(StatementEntry entry) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final descController = TextEditingController(text: entry.description);
+    final qtyController = TextEditingController(
+      text: entry.quantity > 0 ? entry.quantity.toStringAsFixed(0) : '',
+    );
+    final priceController = TextEditingController(
+      text: entry.unitPrice > 0 ? entry.unitPrice.toStringAsFixed(2) : '',
+    );
+    final dateController = TextEditingController(text: entry.date);
+    final bankController = TextEditingController(text: entry.bank ?? '');
+    final notesController = TextEditingController(text: entry.notes ?? '');
+
+    double calcSubtotal() {
+      final q = double.tryParse(qtyController.text.trim()) ?? 0;
+      final p = double.tryParse(priceController.text.trim()) ?? 0;
+      return q * p;
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final cardColor = isDark ? const Color(0xFF1B2234) : Colors.white;
+            final subtotal = calcSubtotal();
+
+            return Container(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                16,
+                20,
+                MediaQuery.of(ctx).viewInsets.bottom + 20,
+              ),
+              decoration: BoxDecoration(
+                color: cardColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade400,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.table_chart_outlined,
+                              color: Color(0xFF2563EB),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _isAmharic ? 'የረድፍ ኤክሴል ማስተካከያ' : 'Excel Row Editor',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: descController,
+                      decoration: InputDecoration(
+                        labelText: _isAmharic ? 'የዕቃው አይነት / ስም' : 'Item Description',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: dateController,
+                      decoration: InputDecoration(
+                        labelText: _isAmharic ? 'ቀን' : 'Date',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.calendar_today, size: 18),
+                          onPressed: () async {
+                            final now = DateTime.now();
+                            final picked = await showDatePicker(
+                              context: ctx,
+                              initialDate: now,
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime(2100),
+                            );
+                            if (picked != null) {
+                              dateController.text =
+                                  '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+                              setModalState(() {});
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: qtyController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(
+                              labelText: _isAmharic ? 'ብዛት (Pcs)' : 'Quantity (Pcs)',
+                              border: const OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            onChanged: (_) => setModalState(() {}),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: priceController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(
+                              labelText: _isAmharic ? 'ዋጋ (ETB)' : 'Price (ETB)',
+                              border: const OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            onChanged: (_) => setModalState(() {}),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF242C40) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _isAmharic ? 'ድምር ዋጋ፦' : 'Calculated Total:',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                          Text(
+                            'ETB ${_currencyFormat.format(subtotal > 0 ? subtotal : (entry.debit > 0 ? entry.debit : entry.credit))}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontFamily: 'monospace',
+                              fontSize: 13,
+                              color: Color(0xFF2563EB),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: bankController,
+                      decoration: InputDecoration(
+                        labelText: _isAmharic ? 'ባንክ / የክፍያ ዘዴ' : 'Bank / Method',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: notesController,
+                      decoration: InputDecoration(
+                        labelText: _isAmharic ? 'ማስታወሻ' : 'Notes / Reference',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      icon: const Icon(Icons.check, size: 18),
+                      label: Text(
+                        _isAmharic ? 'ለውጦችን መዝግብ' : 'Save Changes',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: () async {
+                        if (entry.recordId == null || entry.id == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Cannot edit: Entry not linked to an editable record.'),
+                            ),
+                          );
+                          Navigator.pop(ctx);
+                          return;
+                        }
+                        try {
+                          final q = double.tryParse(qtyController.text.trim()) ?? 0;
+                          final p = double.tryParse(priceController.text.trim()) ?? 0;
+                          await ApiService.updateStatementEntry(
+                            recordId: entry.recordId!,
+                            itemId: entry.id!,
+                            description: descController.text.trim(),
+                            quantity: q,
+                            unitPrice: p,
+                            date: dateController.text.trim(),
+                            bank: bankController.text.trim().isEmpty ? null : bankController.text.trim(),
+                            notes: notesController.text.trim().isEmpty ? null : notesController.text.trim(),
+                          );
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(_isAmharic ? 'ረድፉ በተሳካ ሁኔታ ተስተካክሏል' : 'Row updated successfully!'),
+                                backgroundColor: const Color(0xFF16A34A),
+                              ),
+                            );
+                            _loadStatement();
+                          }
+                        } catch (err) {
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(content: Text('Error: $err'), backgroundColor: Colors.red),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _printOrExportPdf({bool shareOnly = false}) async {
     if (_statement == null) return;
     final st = _statement!;
 
     final pdf = pw.Document();
+    final logoBytes = AppSettingsService.getLogoBytes();
+    final customTitle = AppSettingsService.appTitleNotifier.value;
 
     pdf.addPage(
       pw.MultiPage(
@@ -79,39 +564,56 @@ class _StatementScreenState extends State<StatementScreen> {
         margin: const pw.EdgeInsets.all(28),
         build: (pw.Context context) {
           return [
-            // Header
+            // Header with dynamic App Title & dynamic Logo
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Column(
+                pw.Row(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    pw.Text(
-                      'MERKATO CREDIT RECORD',
-                      style: pw.TextStyle(
-                        fontSize: 18,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColors.blueGrey900,
+                    if (logoBytes != null) ...[
+                      pw.Container(
+                        width: 36,
+                        height: 36,
+                        margin: const pw.EdgeInsets.only(right: 10),
+                        child: pw.ClipRRect(
+                          horizontalRadius: 6,
+                          verticalRadius: 6,
+                          child: pw.Image(pw.MemoryImage(logoBytes)),
+                        ),
                       ),
-                    ),
-                    pw.SizedBox(height: 3),
-                    pw.Text(
-                      st.storeName.isEmpty
-                          ? 'Account Statement'
-                          : '${st.storeName} - Account Statement',
-                      style: const pw.TextStyle(
-                        fontSize: 10,
-                        color: PdfColors.grey700,
-                      ),
-                    ),
-                    pw.SizedBox(height: 2),
-                    pw.Text(
-                      'Account: ${st.accountName} (${st.accountType.toUpperCase()})',
-                      style: pw.TextStyle(
-                        fontSize: 11,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
+                    ],
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          customTitle,
+                          style: pw.TextStyle(
+                            fontSize: 18,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.blueGrey900,
+                          ),
+                        ),
+                        pw.SizedBox(height: 3),
+                        pw.Text(
+                          st.storeName.isEmpty
+                              ? 'Account Statement'
+                              : '${st.storeName} - Account Statement',
+                          style: const pw.TextStyle(
+                            fontSize: 10,
+                            color: PdfColors.grey700,
+                          ),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          'Account: ${st.accountName} (${st.accountType.toUpperCase()})',
+                          style: pw.TextStyle(
+                            fontSize: 11,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -151,16 +653,14 @@ class _StatementScreenState extends State<StatementScreen> {
             pw.Divider(thickness: 1, color: PdfColors.grey400),
             pw.SizedBox(height: 8),
 
-            // Excel-style Statement Table
+            // Excel-style Statement Table (without Balance column, x instead of @, Ethiopian date)
             pw.TableHelper.fromTextArray(
               headers: [
                 'Date',
                 'Item',
-                'Qty',
-                'Price',
-                'Debit',
-                'Credit',
-                'Balance',
+                'Qty x Price',
+                'Debit (+)',
+                'Credit (-)',
               ],
               headerStyle: pw.TextStyle(
                 fontWeight: pw.FontWeight.bold,
@@ -178,27 +678,24 @@ class _StatementScreenState extends State<StatementScreen> {
                 2: pw.Alignment.centerRight,
                 3: pw.Alignment.centerRight,
                 4: pw.Alignment.centerRight,
-                5: pw.Alignment.centerRight,
-                6: pw.Alignment.centerRight,
               },
               data: st.entries.map((entry) {
+                final qtyPrice = (entry.quantity > 0 && entry.unitPrice > 0)
+                    ? '${entry.quantity.toInt()} pcs x ${_currencyFormat.format(entry.unitPrice)}'
+                    : '-';
                 return [
-                  entry.date,
+                  _formatEthiopianDate(entry.date),
                   entry.description +
                       (entry.bank != null ? ' [${entry.bank}]' : ''),
-                  entry.quantity > 0 ? entry.quantity.toStringAsFixed(0) : '-',
-                  entry.unitPrice > 0
-                      ? _currencyFormat.format(entry.unitPrice)
-                      : '-',
+                  qtyPrice,
                   entry.debit > 0 ? _currencyFormat.format(entry.debit) : '-',
                   entry.credit > 0 ? _currencyFormat.format(entry.credit) : '-',
-                  _currencyFormat.format(entry.balance),
                 ];
               }).toList(),
             ),
             pw.SizedBox(height: 12),
 
-            // Statement Totals matching Excel reference
+            // Statement Totals
             pw.Container(
               padding: const pw.EdgeInsets.all(10),
               decoration: pw.BoxDecoration(
@@ -262,10 +759,18 @@ class _StatementScreenState extends State<StatementScreen> {
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
-      name: 'statement-${st.accountName.replaceAll(' ', '_')}.pdf',
-    );
+    final bytes = await pdf.save();
+    if (shareOnly) {
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: 'statement-${st.accountName.replaceAll(' ', '_')}.pdf',
+      );
+    } else {
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => bytes,
+        name: 'statement-${st.accountName.replaceAll(' ', '_')}.pdf',
+      );
+    }
   }
 
   @override
@@ -294,12 +799,32 @@ class _StatementScreenState extends State<StatementScreen> {
         elevation: 0.5,
         foregroundColor: theme.colorScheme.onSurface,
         actions: [
-          if (_statement != null)
+          if (_statement != null) ...[
+            // 1. Capture Table Screenshot (Only Tables)
             IconButton(
-              icon: const Icon(Icons.print_outlined),
-              tooltip: _isAmharic ? 'መግለጫ አትም / ፒዲኤፍ' : 'Print Statement',
-              onPressed: _printOrExportPdf,
+              icon: const Icon(Icons.camera_alt_outlined, size: 20),
+              tooltip: _isAmharic
+                  ? 'የሠንጠረዥ ስክሪንሾት ውሰድ'
+                  : 'Capture Table Screenshot',
+              onPressed: () => _captureTableScreenshot(share: false),
             ),
+
+            // 2. Export / Print PDF Statement
+            IconButton(
+              icon: const Icon(Icons.print_outlined, size: 20),
+              tooltip: _isAmharic ? 'መግለጫ አትም / ፒዲኤፍ' : 'Print Statement',
+              onPressed: () => _printOrExportPdf(shareOnly: false),
+            ),
+
+            // 3. Share to Social Media (WhatsApp, Telegram, etc.)
+            IconButton(
+              icon: const Icon(Icons.share_outlined, size: 20),
+              tooltip: _isAmharic
+                  ? 'በማህበራዊ ሚዲያ አጋራ'
+                  : 'Share to Social Media',
+              onPressed: _shareStatement,
+            ),
+          ],
         ],
       ),
       body: TelebirrBackground(
@@ -351,7 +876,7 @@ class _StatementScreenState extends State<StatementScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Account Summary Card
+          // Account Summary Card with dynamic App Logo
           Container(
             padding: const EdgeInsets.all(12.0),
             decoration: BoxDecoration(
@@ -363,11 +888,12 @@ class _StatementScreenState extends State<StatementScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
+                    AppSettingsService.buildLogoWidget(size: 28),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        st.accountName,
+                        widget.accountName,
                         style: TextStyle(
                           fontSize: 16.5,
                           fontWeight: FontWeight.bold,
@@ -382,7 +908,9 @@ class _StatementScreenState extends State<StatementScreen> {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w900,
-                        color: theme.colorScheme.onSurface,
+                        color: st.totals.outstanding > 0
+                            ? const Color(0xFFDC2626)
+                            : const Color(0xFF16A34A),
                       ),
                     ),
                   ],
@@ -406,7 +934,11 @@ class _StatementScreenState extends State<StatementScreen> {
           const SizedBox(height: 10),
 
           // Authentic Excel Ledger Table (Zero Horizontal Scrolling, Authentic Gridlines)
-          _buildMobileExcelTable(st),
+          // Wrapped in RepaintBoundary for single-table high-res screenshot capture
+          RepaintBoundary(
+            key: _tableKey,
+            child: _buildMobileExcelTable(st),
+          ),
           const SizedBox(height: 12),
 
           // Excel Totals Footer Card
@@ -417,6 +949,7 @@ class _StatementScreenState extends State<StatementScreen> {
   }
 
   /// Authentic Excel Table perfectly fitted to small mobile screens with real spreadsheet gridlines
+  /// (Balance column removed to give spacious layout; click row to edit in Excel mode)
   Widget _buildMobileExcelTable(AccountStatement st) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -436,7 +969,7 @@ class _StatementScreenState extends State<StatementScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Excel Header Row (Classic Spreadsheet Header)
+            // Excel Header Row (Classic Spreadsheet Header: Date, Item, Debit, Credit)
             Container(
               padding: const EdgeInsets.symmetric(vertical: 7),
               decoration: BoxDecoration(
@@ -450,7 +983,7 @@ class _StatementScreenState extends State<StatementScreen> {
               child: Row(
                 children: [
                   Expanded(
-                    flex: 6,
+                    flex: 8,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       decoration: BoxDecoration(
@@ -471,7 +1004,7 @@ class _StatementScreenState extends State<StatementScreen> {
                     ),
                   ),
                   Expanded(
-                    flex: 13,
+                    flex: 15,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5),
                       decoration: BoxDecoration(
@@ -492,7 +1025,7 @@ class _StatementScreenState extends State<StatementScreen> {
                     ),
                   ),
                   Expanded(
-                    flex: 6,
+                    flex: 7,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       decoration: BoxDecoration(
@@ -516,14 +1049,9 @@ class _StatementScreenState extends State<StatementScreen> {
                     ),
                   ),
                   Expanded(
-                    flex: 6,
+                    flex: 7,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          right: BorderSide(color: gridColor, width: 0.8),
-                        ),
-                      ),
                       child: Text(
                         isStock
                             ? (_isAmharic ? 'ወጪ (-)' : 'Stock Out (-)')
@@ -539,28 +1067,11 @@ class _StatementScreenState extends State<StatementScreen> {
                       ),
                     ),
                   ),
-                  Expanded(
-                    flex: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Text(
-                        _isAmharic ? 'ቀሪ' : (isStock ? 'On Hand' : 'Balance'),
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                          color: isDark
-                              ? Colors.white
-                              : const Color(0xFF1E293B),
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
 
-            // Excel Data Rows with Gridlines
+            // Excel Data Rows with Gridlines (Clickable to Edit Excel-Style)
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -577,155 +1088,144 @@ class _StatementScreenState extends State<StatementScreen> {
                           ? const Color(0xFF18181B)
                           : const Color(0xFFF8FAFC));
 
-                return Container(
-                  color: rowBg,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Col 1: Date
-                      Expanded(
-                        flex: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 7,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border(
-                              right: BorderSide(color: gridColor, width: 0.8),
-                            ),
-                          ),
-                          child: Text(
-                            entry.date,
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              color: isDark
-                                  ? const Color(0xFF94A3B8)
-                                  : const Color(0xFF475569),
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: -0.2,
-                            ),
-                            maxLines: 1,
-                            softWrap: false,
-                          ),
-                        ),
-                      ),
-
-                      // Col 2: Description & Qty/Price (NO TRUNCATION!)
-                      Expanded(
-                        flex: 13,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 7,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border(
-                              right: BorderSide(color: gridColor, width: 0.8),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                entry.description,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: theme.colorScheme.onSurface,
-                                  height: 1.25,
-                                ),
-                                softWrap: true, // FULL NAME ALWAYS VISIBLE
-                              ),
-                              if (entry.quantity > 0 && entry.unitPrice > 0)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Text(
-                                    '${entry.quantity.toStringAsFixed(0)} pcs @ ${_currencyFormat.format(entry.unitPrice)}',
-                                    style: TextStyle(
-                                      fontSize: 9.5,
-                                      color: isDark
-                                          ? const Color(0xFF94A3B8)
-                                          : const Color(0xFF64748B),
-                                    ),
-                                  ),
-                                )
-                              else if (entry.bank != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Text(
-                                    '[${entry.bank}]',
-                                    style: TextStyle(
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: isDark
-                                          ? const Color(0xFF94A3B8)
-                                          : const Color(0xFF64748B),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      // Col 3: Debit
-                      Expanded(
-                        flex: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 7,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border(
-                              right: BorderSide(color: gridColor, width: 0.8),
-                            ),
-                          ),
-                          alignment: Alignment.centerRight,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerRight,
-                            child: Text(
-                              entry.debit > 0
-                                  ? _currencyFormat.format(entry.debit)
-                                  : '-',
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w700,
-                                color: entry.debit > 0
-                                    ? const Color(0xFFDC2626)
-                                    : (isDark
-                                          ? Colors.grey.shade700
-                                          : Colors.grey.shade400),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // Col 4: Credit (Payment highlighted in yellow)
-                      Expanded(
-                        flex: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 7,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border(
-                              right: BorderSide(color: gridColor, width: 0.8),
-                            ),
-                          ),
-                          alignment: Alignment.centerRight,
+                return InkWell(
+                  onTap: () => _openExcelRowEditor(entry),
+                  child: Container(
+                    color: rowBg,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Col 1: Date (Ethiopian Calendar)
+                        Expanded(
+                          flex: 8,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 3,
-                              vertical: 1.5,
+                              horizontal: 4,
+                              vertical: 7,
                             ),
-                            decoration: const BoxDecoration(
-                              color: Colors.transparent,
+                            decoration: BoxDecoration(
+                              border: Border(
+                                right: BorderSide(color: gridColor, width: 0.8),
+                              ),
                             ),
+                            child: Text(
+                              _formatEthiopianDate(entry.date),
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                color: isDark
+                                    ? const Color(0xFF94A3B8)
+                                    : const Color(0xFF475569),
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -0.2,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+
+                        // Col 2: Description & Qty x Price (NO TRUNCATION, uses 'x' instead of '@')
+                        Expanded(
+                          flex: 15,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                right: BorderSide(color: gridColor, width: 0.8),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  entry.description,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: theme.colorScheme.onSurface,
+                                    height: 1.25,
+                                  ),
+                                  softWrap: true, // FULL NAME ALWAYS VISIBLE
+                                ),
+                                if (entry.quantity > 0 && entry.unitPrice > 0)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      '${entry.quantity.toInt()} pcs x ${_currencyFormat.format(entry.unitPrice)}',
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        color: isDark
+                                            ? const Color(0xFF94A3B8)
+                                            : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  )
+                                else if (entry.bank != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      '[${entry.bank}]',
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark
+                                            ? const Color(0xFF94A3B8)
+                                            : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                        // Col 3: Debit
+                        Expanded(
+                          flex: 7,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                right: BorderSide(color: gridColor, width: 0.8),
+                              ),
+                            ),
+                            alignment: Alignment.centerRight,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: Text(
+                                entry.debit > 0
+                                    ? _currencyFormat.format(entry.debit)
+                                    : '-',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: entry.debit > 0
+                                      ? const Color(0xFFDC2626)
+                                      : (isDark
+                                            ? Colors.grey.shade700
+                                            : Colors.grey.shade400),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        // Col 4: Credit
+                        Expanded(
+                          flex: 7,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 7,
+                            ),
+                            alignment: Alignment.centerRight,
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.centerRight,
@@ -746,42 +1246,14 @@ class _StatementScreenState extends State<StatementScreen> {
                             ),
                           ),
                         ),
-                      ),
-
-                      // Col 5: Balance
-                      Expanded(
-                        flex: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 7,
-                          ),
-                          alignment: Alignment.centerRight,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerRight,
-                            child: Text(
-                              _currencyFormat.format(entry.balance),
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: entry.balance > 0
-                                    ? const Color(0xFFDC2626)
-                                    : (entry.balance < 0
-                                        ? const Color(0xFF16A34A)
-                                        : theme.colorScheme.onSurface),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               },
             ),
 
-            // Excel Bottom Total Row (Authentic Spreadsheet Total with Double-Border)
+            // Excel Bottom Total Row (TOTAL, Debit Total, Credit Total - No balance column in table)
             Container(
               padding: const EdgeInsets.symmetric(vertical: 8),
               decoration: BoxDecoration(
@@ -801,7 +1273,7 @@ class _StatementScreenState extends State<StatementScreen> {
               child: Row(
                 children: [
                   Expanded(
-                    flex: 19, // 6 + 13
+                    flex: 23, // 8 + 15
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       decoration: BoxDecoration(
@@ -821,7 +1293,7 @@ class _StatementScreenState extends State<StatementScreen> {
                     ),
                   ),
                   Expanded(
-                    flex: 6,
+                    flex: 7,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       decoration: BoxDecoration(
@@ -844,14 +1316,9 @@ class _StatementScreenState extends State<StatementScreen> {
                     ),
                   ),
                   Expanded(
-                    flex: 6,
+                    flex: 7,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          right: BorderSide(color: gridColor, width: 0.8),
-                        ),
-                      ),
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerRight,
@@ -861,26 +1328,6 @@ class _StatementScreenState extends State<StatementScreen> {
                             fontWeight: FontWeight.w900,
                             fontSize: 11,
                             color: Color(0xFF16A34A),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerRight,
-                        child: Text(
-                          _currencyFormat.format(st.totals.outstanding),
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 11.5,
-                            color: st.totals.outstanding > 0
-                                ? const Color(0xFFDC2626)
-                                : const Color(0xFF16A34A),
                           ),
                         ),
                       ),

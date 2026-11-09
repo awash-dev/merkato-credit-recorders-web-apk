@@ -7,6 +7,7 @@ import '../models/store.dart';
 import '../models/ledger_record.dart';
 import '../services/api_service.dart';
 import '../services/language_service.dart';
+import '../services/app_settings_service.dart';
 import 'login_screen.dart';
 import 'record_form_dialog.dart';
 import 'statement_screen.dart';
@@ -1155,6 +1156,125 @@ class _MainScreenState extends State<MainScreen> {
                   ],
                 ),
               ),
+
+              const SizedBox(height: 12),
+
+              // Business Branding & Logo Settings (Dynamic App Title and Logo)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF242C40)
+                      : const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isDark
+                        ? const Color(0xFF2E384D)
+                        : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: StatefulBuilder(
+                  builder: (ctx2, setLocalState) {
+                    final titleController = TextEditingController(
+                      text: AppSettingsService.appTitleNotifier.value,
+                    );
+                    final logoController = TextEditingController(
+                      text: AppSettingsService.appLogoNotifier.value ?? '',
+                    );
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _isAmharic ? 'የንግድ ስም እና ሎጎ' : 'Business Branding & Logo',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            AppSettingsService.buildLogoWidget(size: 40),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _isAmharic
+                                    ? 'የመረጡት ሎጎ በራስጌ እና በፒዲኤፍ ሪፖርቶች ላይ ይታያል'
+                                    : 'Your logo appears in app headers and PDF statements',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  color: isDark
+                                      ? const Color(0xFF94A3B8)
+                                      : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            _buildLogoPresetChip('store', 'Store', Icons.storefront_rounded, setLocalState),
+                            _buildLogoPresetChip('cart', 'Cart', Icons.shopping_cart_rounded, setLocalState),
+                            _buildLogoPresetChip('diamond', 'Diamond', Icons.diamond_rounded, setLocalState),
+                            _buildLogoPresetChip('building', 'Building', Icons.domain_rounded, setLocalState),
+                            _buildLogoPresetChip('star', 'Star', Icons.stars_rounded, setLocalState),
+                            _buildLogoPresetChip('business', 'Trade', Icons.business_center_rounded, setLocalState),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: titleController,
+                          decoration: InputDecoration(
+                            labelText: _isAmharic ? 'የመተግበሪያ / የንግድ ስም' : 'App / Business Title',
+                            isDense: true,
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.check, size: 18),
+                              onPressed: () async {
+                                await AppSettingsService.setAppTitle(titleController.text);
+                                setLocalState(() {});
+                                if (mounted) setState(() {});
+                              },
+                            ),
+                          ),
+                          onSubmitted: (val) async {
+                            await AppSettingsService.setAppTitle(val);
+                            setLocalState(() {});
+                            if (mounted) setState(() {});
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: logoController,
+                          decoration: InputDecoration(
+                            labelText: _isAmharic ? 'የሎጎ Image URL ወይም Base64' : 'Logo Image URL / Base64',
+                            isDense: true,
+                            border: const OutlineInputBorder(),
+                            hintText: 'https://... or base64:...',
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.check, size: 18),
+                              onPressed: () async {
+                                await AppSettingsService.setAppLogo(logoController.text);
+                                setLocalState(() {});
+                                if (mounted) setState(() {});
+                              },
+                            ),
+                          ),
+                          onSubmitted: (val) async {
+                            await AppSettingsService.setAppLogo(val);
+                            setLocalState(() {});
+                            if (mounted) setState(() {});
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
               if (widget.currentUser.isAdmin) ...[
                 const SizedBox(height: 12),
                 ListTile(
@@ -1186,6 +1306,51 @@ class _MainScreenState extends State<MainScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildLogoPresetChip(
+    String key,
+    String label,
+    IconData icon,
+    StateSetter setLocalState,
+  ) {
+    final isSelected = AppSettingsService.appLogoNotifier.value == key;
+    return InkWell(
+      onTap: () async {
+        await AppSettingsService.setAppLogo(key);
+        setLocalState(() {});
+        if (mounted) setState(() {});
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF2563EB) : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 13,
+              color: isSelected ? Colors.white : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : const Color(0xFF334155),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -2816,19 +2981,7 @@ class _MainScreenState extends State<MainScreen> {
         ),
         title: Row(
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: const Color(0xFF2563EB).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.storefront_rounded,
-                color: Color(0xFF2563EB),
-                size: 18,
-              ),
-            ),
+            AppSettingsService.buildLogoWidget(size: 32),
             const SizedBox(width: 8),
             Expanded(
               child: Column(

@@ -134,6 +134,41 @@ class ApiService {
     return _generateLocalStatement(name, type, storeId, storeName, matching);
   }
 
+  /// Updates a single line item within a ledger record (for Excel-style inline statement editing)
+  static Future<void> updateStatementEntry({
+    required String recordId,
+    required String itemId,
+    required String description,
+    required double quantity,
+    required double unitPrice,
+    required String date,
+    double? debit,
+    double? credit,
+    String? bank,
+    String? notes,
+  }) async {
+    final records = await getRecords();
+    final idx = records.indexWhere((r) => r.id == recordId);
+    if (idx == -1) {
+      throw Exception('Record not found for ID: $recordId');
+    }
+    final rec = records[idx];
+    final updatedItems = rec.items.map((it) {
+      if (it.id == itemId) {
+        it.name = description;
+        it.quantity = quantity;
+        it.unitPrice = unitPrice;
+        it.date = date;
+        if (bank != null) it.bank = bank;
+        if (notes != null) it.notes = notes;
+      }
+      return it;
+    }).toList();
+
+    final updatedRec = rec.copyWith(items: updatedItems);
+    await updateRecord(updatedRec);
+  }
+
   /// Resolves a store's display name straight from the stores table.
   /// There is no hardcoded store name: an unknown id simply has no name.
   static Future<String> _storeNameFromDb(String? storeId) async {
@@ -396,6 +431,7 @@ class ApiService {
 
         entries.add({
           'id': item.id,
+          'recordId': rec.id,
           'date': item.date ?? rec.date,
           'description': desc,
           'quantity': item.quantity,
@@ -431,6 +467,8 @@ class ApiService {
 
       computedEntries.add(
         StatementEntry(
+          id: e['id']?.toString(),
+          recordId: e['recordId']?.toString(),
           date: e['date']?.toString() ?? '',
           description: e['description']?.toString() ?? '',
           quantity: (e['quantity'] as num?)?.toDouble() ?? 0,
