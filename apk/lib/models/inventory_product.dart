@@ -15,6 +15,7 @@ class InventoryProduct {
   final double minimumStock;
   final double unitPrice; // selling price
   final double costPrice; // purchase price
+  final double storekeeperPrice; // storekeeper price per single piece
   final double pcsPerCarton;
   final String? supplierName;
   final String? lastTransactionDate;
@@ -43,6 +44,7 @@ class InventoryProduct {
     this.minimumStock = 0,
     required this.unitPrice,
     this.costPrice = 0,
+    this.storekeeperPrice = 0,
     this.pcsPerCarton = 1,
     this.supplierName,
     this.lastTransactionDate,
@@ -113,6 +115,10 @@ class InventoryProduct {
       minimumStock: parseDouble(json['minimum_stock']),
       unitPrice: parseDouble(json['unit_price']),
       costPrice: parseDouble(json['cost_price']),
+      storekeeperPrice: parseDouble(
+        json['storekeeper_price'],
+        parseDouble(json['price_per_piece'], parseDouble(json['unit_price'])),
+      ),
       pcsPerCarton: parseDouble(json['pcs_per_carton'], 1.0),
       supplierName: json['supplier_name']?.toString(),
       lastTransactionDate: json['last_transaction_date']?.toString(),
@@ -146,6 +152,7 @@ class InventoryProduct {
       'minimum_stock': minimumStock,
       'unit_price': unitPrice,
       'cost_price': costPrice,
+      'storekeeper_price': storekeeperPrice,
       'pcs_per_carton': pcsPerCarton,
       'supplier_name': supplierName,
       'last_transaction_date': lastTransactionDate,

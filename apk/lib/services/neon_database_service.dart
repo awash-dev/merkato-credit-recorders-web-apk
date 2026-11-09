@@ -122,6 +122,12 @@ class NeonDatabaseService {
     return digest.toString();
   }
 
+  /// Hash session token using SHA-256 for secure session persistence
+  static String hashToken(String token) {
+    final bytes = utf8.encode(token);
+    return sha256.convert(bytes).toString();
+  }
+
   /// Execute raw parameterized SQL directly on Neon PostgreSQL
   static Future<List<Map<String, dynamic>>> executeSql(
     String query, [
@@ -263,16 +269,19 @@ class NeonDatabaseService {
     if (cleanPhone == null) {
       throw Exception('Enter a valid Ethiopian phone number (e.g. 0911111111)');
     }
+    final localPhone = cleanPhone.startsWith('+251')
+        ? '0${cleanPhone.substring(4)}'
+        : cleanPhone;
 
     final rows = await executeSql(
       '''
       SELECT u.id, u.name, u.email, u.phone, u.password_hash, u.role, u.store_id, u.active, sh.name AS store_name
       FROM users u
       LEFT JOIN stores sh ON sh.id = u.store_id
-      WHERE u.phone = \$1 OR u.phone = \$2
+      WHERE u.phone = \$1 OR u.phone = \$2 OR u.phone = \$3
       LIMIT 1
       ''',
-      [cleanPhone, phone.trim()],
+      [cleanPhone, phone.trim(), localPhone],
     );
 
     if (rows.isEmpty) return null;
@@ -303,6 +312,67 @@ class NeonDatabaseService {
       storeName: row['store_name']?.toString(),
       active: true,
     );
+  }
+
+  /// Persist session into Neon database sessions table (30 days validity)
+  static Future<void> saveSessionDirect({
+    required String token,
+    required String userId,
+    required int createdAt,
+    required int expiresAt,
+  }) async {
+    final tokenHash = hashToken(token);
+    await executeSql(
+      '''
+      INSERT INTO sessions (token_hash, user_id, created_at, expires_at)
+      VALUES (\$1, \$2, \$3, \$4)
+      ON CONFLICT (token_hash) DO UPDATE SET
+        expires_at = EXCLUDED.expires_at
+      ''',
+      [tokenHash, userId, createdAt, expiresAt],
+    );
+  }
+
+  /// Remove session from Neon database sessions table
+  static Future<void> deleteSessionDirect({
+    String? token,
+    String? userId,
+  }) async {
+    if (token != null && token.isNotEmpty) {
+      final tokenHash = hashToken(token);
+      await executeSql('DELETE FROM sessions WHERE token_hash = \$1', [tokenHash]);
+    }
+    if (userId != null && userId.isNotEmpty) {
+      await executeSql(
+        'DELETE FROM sessions WHERE user_id = \$1 AND expires_at < \$2',
+        [userId, DateTime.now().millisecondsSinceEpoch],
+      );
+    }
+  }
+
+  /// Validate session token directly against Neon database sessions table
+  static Future<bool> isSessionValidDirect(String token) async {
+    try {
+      final tokenHash = hashToken(token);
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final rows = await executeSql(
+        '''
+        SELECT s.expires_at, u.active
+        FROM sessions s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.token_hash = \$1
+        LIMIT 1
+        ''',
+        [tokenHash],
+      );
+      if (rows.isEmpty) return false;
+      if (!isTruthy(rows.first['active'])) return false;
+      final exp = int.tryParse(rows.first['expires_at'].toString()) ?? 0;
+      return exp > nowMs;
+    } catch (_) {
+      // Offline fallback: caller relies on 30-day local cache
+      return true;
+    }
   }
 
   /// Fetch stores directly from Neon (returns an empty list when the table is
@@ -621,12 +691,22 @@ class NeonDatabaseService {
 
   /// Delete store directly in Neon
   static Future<void> deleteStoreDirect(String storeId) async {
-    await executeSql('DELETE FROM ledger_records WHERE store_id = \$1', [
-      storeId,
-    ]);
-    await executeSql('UPDATE users SET store_id = NULL WHERE store_id = \$1', [
-      storeId,
-    ]);
+    await executeSql('DELETE FROM ledger_records WHERE store_id = \$1', [storeId]);
+    try {
+      await executeSql('DELETE FROM ledger_transactions WHERE store_id = \$1', [storeId]);
+    } catch (_) {}
+    try {
+      await executeSql('DELETE FROM stock_movements WHERE store_id = \$1', [storeId]);
+    } catch (_) {}
+    try {
+      await executeSql('DELETE FROM store_inventory WHERE store_id = \$1', [storeId]);
+    } catch (_) {}
+    try {
+      await executeSql('UPDATE users SET store_id = NULL WHERE store_id = \$1', [storeId]);
+    } catch (_) {}
+    try {
+      await executeSql('UPDATE delala_entries SET store_id = NULL WHERE store_id = \$1', [storeId]);
+    } catch (_) {}
     await executeSql('DELETE FROM stores WHERE id = \$1', [storeId]);
   }
 
@@ -667,11 +747,14 @@ class NeonDatabaseService {
     if (cleanPhone == null) {
       throw Exception('Enter a valid Ethiopian phone number (e.g. 0911111111)');
     }
+    final localPhone = cleanPhone.startsWith('+251')
+        ? '0${cleanPhone.substring(4)}'
+        : cleanPhone;
 
     // Reject duplicate phone numbers (unique index safety with clear error)
     final existing = await executeSql(
-      'SELECT id FROM users WHERE phone = \$1 LIMIT 1',
-      [cleanPhone],
+      'SELECT id FROM users WHERE phone = \$1 OR phone = \$2 LIMIT 1',
+      [cleanPhone, localPhone],
     );
     if (existing.isNotEmpty) {
       throw Exception('A storekeeper with phone $cleanPhone already exists');
@@ -730,9 +813,12 @@ class NeonDatabaseService {
           'Enter a valid Ethiopian phone number (e.g. 0911111111)',
         );
       }
+      final localPhone = cleanPhone.startsWith('+251')
+          ? '0${cleanPhone.substring(4)}'
+          : cleanPhone;
       final existing = await executeSql(
-        'SELECT id FROM users WHERE phone = \$1 AND id != \$2 LIMIT 1',
-        [cleanPhone, userId],
+        'SELECT id FROM users WHERE (phone = \$1 OR phone = \$2) AND id != \$3 LIMIT 1',
+        [cleanPhone, localPhone, userId],
       );
       if (existing.isNotEmpty) {
         throw Exception('Another storekeeper already uses phone $cleanPhone');
@@ -1561,6 +1647,7 @@ class NeonDatabaseService {
     double openingLoosePieces = 0,
     double minimumStock = 0,
     double costPrice = 0,
+    double? storekeeperPrice,
     String? storeId,
     String? category,
     String? supplierName,
@@ -1584,6 +1671,9 @@ class NeonDatabaseService {
     final sku =
         'SKU-${DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase()}';
     final pCost = costPrice > 0 ? costPrice : unitPrice;
+    final pStorekeeper = (storekeeperPrice != null && storekeeperPrice > 0)
+        ? storekeeperPrice
+        : unitPrice;
     final totalValue = totalInitialPieces * unitPrice;
 
     final rows = await executeSql(
@@ -1593,12 +1683,12 @@ class NeonDatabaseService {
         current_quantity, minimum_stock, unit_price, cost_price,
         pcs_per_carton, supplier_name, last_transaction_date, description, created_by,
         quantity_cartons, quantity_per_carton, total_quantity, unit,
-        price_per_piece, total_value, is_active, updated_by
+        price_per_piece, total_value, is_active, updated_by, storekeeper_price
       ) VALUES (
         \$1, \$2, \$3, \$4, 'Pcs',
         \$5::numeric, \$6::numeric, \$7::numeric, \$8::numeric,
         \$9::numeric, \$10, \$11, \$12, \$13,
-        \$14::numeric, \$15::numeric, \$16::numeric, 'PCS', \$17::numeric, \$18::numeric, TRUE, \$13
+        \$14::numeric, \$15::numeric, \$16::numeric, 'PCS', \$17::numeric, \$18::numeric, TRUE, \$13, \$19::numeric
       )
       RETURNING *
       ''',
@@ -1621,6 +1711,7 @@ class NeonDatabaseService {
         totalInitialPieces,
         unitPrice,
         totalValue,
+        pStorekeeper,
       ],
     );
 
@@ -2097,6 +2188,7 @@ class NeonDatabaseService {
     String? productName,
     double? unitPrice,
     double? costPrice,
+    double? storekeeperPrice,
     double? pcsPerCarton,
     double? quantityCartons,
     double? minimumStock,
@@ -2130,6 +2222,7 @@ class NeonDatabaseService {
         description = COALESCE(\$9, description),
         updated_by = COALESCE(\$11, updated_by),
         is_active = COALESCE(\$12, is_active),
+        storekeeper_price = COALESCE(\$13::numeric, storekeeper_price),
         current_quantity = CASE
           WHEN \$5 IS NOT NULL THEN \$5::numeric * COALESCE(\$4::numeric, quantity_per_carton)
           ELSE current_quantity
@@ -2161,6 +2254,7 @@ class NeonDatabaseService {
         id,
         updatedBy,
         isActive,
+        storekeeperPrice,
       ],
     );
 

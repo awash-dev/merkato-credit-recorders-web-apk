@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'file_image_picker.dart';
 
 class AppSettingsService {
   static const String _keyTitle = 'app_custom_title';
@@ -13,14 +14,18 @@ class AppSettingsService {
       ValueNotifier<String>(defaultTitle);
 
   /// Logo can be:
-  /// - A Base64 string (starts with "base64:" or raw base64 data)
-  /// - A URL (starts with "http")
-  /// - A preset name ("store", "cart", "diamond", "building", "star")
-  /// - null (uses default app logo)
+  /// - A Base64 string (from image upload, starts with "data:image" or "base64:")
+  /// - An Image URL (starts with "http")
+  /// - null (uses the 1 default application logo)
   static final ValueNotifier<String?> appLogoNotifier =
       ValueNotifier<String?>(null);
 
   static bool _initialized = false;
+
+  static bool get hasCustomLogo {
+    final v = appLogoNotifier.value;
+    return v != null && v.trim().isNotEmpty;
+  }
 
   static Future<void> init() async {
     if (_initialized) return;
@@ -61,6 +66,27 @@ class AppSettingsService {
     } catch (_) {}
   }
 
+  /// Pick an image file from the device gallery/files and save as custom logo (Base64)
+  static Future<bool> pickAndSaveLogo() async {
+    try {
+      final bytes = await pickImageBytes();
+      if (bytes != null && bytes.isNotEmpty) {
+        final base64String = 'data:image/png;base64,${base64Encode(bytes)}';
+        await setAppLogo(base64String);
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Error picking logo image: $e');
+      rethrow;
+    }
+    return false;
+  }
+
+  /// Resets to the 1 default logo
+  static Future<void> resetToDefaultLogo() async {
+    await setAppLogo(null);
+  }
+
   static Uint8List? getLogoBytes() {
     final raw = appLogoNotifier.value;
     if (raw == null || raw.isEmpty) return null;
@@ -91,7 +117,7 @@ class AppSettingsService {
         final radius = borderRadius ?? BorderRadius.circular(8);
 
         if (logoData != null && logoData.isNotEmpty) {
-          // 1. Check if it's base64 image data
+          // 1. Check if it's base64 image data (uploaded file)
           final bytes = getLogoBytes();
           if (bytes != null && bytes.isNotEmpty) {
             return ClipRRect(
@@ -119,63 +145,37 @@ class AppSettingsService {
               ),
             );
           }
-
-          // 3. Preset icons
-          IconData presetIcon;
-          switch (logoData.toLowerCase()) {
-            case 'cart':
-              presetIcon = Icons.shopping_cart_rounded;
-              break;
-            case 'diamond':
-              presetIcon = Icons.diamond_rounded;
-              break;
-            case 'building':
-              presetIcon = Icons.domain_rounded;
-              break;
-            case 'star':
-              presetIcon = Icons.stars_rounded;
-              break;
-            case 'business':
-              presetIcon = Icons.business_center_rounded;
-              break;
-            case 'store':
-            default:
-              presetIcon = Icons.storefront_rounded;
-          }
-
-          return Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              color: (fallbackColor ?? const Color(0xFF2563EB)).withValues(alpha: 0.12),
-              borderRadius: radius,
-            ),
-            child: Icon(
-              presetIcon,
-              color: fallbackColor ?? const Color(0xFF2563EB),
-              size: size * 0.58,
-            ),
-          );
         }
 
+        // 3. One default logo (can be updated at any time by uploading an image)
         return _buildFallbackIcon(size, fallbackColor, radius);
       },
     );
   }
 
   static Widget _buildFallbackIcon(double size, Color? color, BorderRadius radius) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: (color ?? const Color(0xFF2563EB)).withValues(alpha: 0.12),
-        borderRadius: radius,
-      ),
-      child: Icon(
-        Icons.storefront_rounded,
-        color: color ?? const Color(0xFF2563EB),
-        size: size * 0.58,
+    return ClipRRect(
+      borderRadius: radius,
+      child: Image.asset(
+        'assets/app_icon.png',
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: (color ?? const Color(0xFF2563EB)).withValues(alpha: 0.12),
+            borderRadius: radius,
+          ),
+          child: Icon(
+            Icons.storefront_rounded,
+            color: color ?? const Color(0xFF2563EB),
+            size: size * 0.58,
+          ),
+        ),
       ),
     );
   }
 }
+

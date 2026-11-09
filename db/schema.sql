@@ -151,15 +151,25 @@ CREATE TABLE IF NOT EXISTS store_inventory (
   sku VARCHAR(64),
   category VARCHAR(128) DEFAULT 'General',
   base_unit VARCHAR(32) DEFAULT 'Pcs',
-  current_quantity DECIMAL(14,2) NOT NULL DEFAULT 0.00,
-  minimum_stock DECIMAL(14,2) DEFAULT 0.00,
+  current_quantity DECIMAL(14,3) NOT NULL DEFAULT 0.000,
+  minimum_stock DECIMAL(14,3) DEFAULT 0.000,
   unit_price DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   cost_price DECIMAL(14,2) NOT NULL DEFAULT 0.00,
-  pcs_per_carton DECIMAL(14,2) DEFAULT 1.00,
+  storekeeper_price DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  pcs_per_carton DECIMAL(14,3) DEFAULT 1.000,
+  quantity_cartons DECIMAL(14,3) NOT NULL DEFAULT 0,
+  quantity_per_carton DECIMAL(14,3) NOT NULL DEFAULT 1,
+  total_quantity DECIMAL(14,3) NOT NULL DEFAULT 0,
+  unit VARCHAR(32) NOT NULL DEFAULT 'PCS',
+  price_per_piece DECIMAL(14,2) NOT NULL DEFAULT 0,
+  total_value DECIMAL(14,2) NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  is_deleted BOOLEAN NOT NULL DEFAULT false,
   supplier_name VARCHAR(255),
   last_transaction_date VARCHAR(64),
   description TEXT,
   created_by VARCHAR(64),
+  updated_by VARCHAR(64),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -179,7 +189,13 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   previous_stock DECIMAL(14,2) NOT NULL,
   new_stock DECIMAL(14,2) NOT NULL,
   unit_price DECIMAL(14,2) NOT NULL,
+  storekeeper_price DECIMAL(14,2) NOT NULL DEFAULT 0.00,
   total_price DECIMAL(14,2) NOT NULL,
+  cartons DECIMAL(14,3) NOT NULL DEFAULT 0,
+  loose_pieces DECIMAL(14,3) NOT NULL DEFAULT 0,
+  total_pieces DECIMAL(14,3) NOT NULL DEFAULT 0,
+  payment_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  outstanding_balance DECIMAL(14,2) NOT NULL DEFAULT 0,
   transaction_date DATE NOT NULL DEFAULT CURRENT_DATE,
   source_type VARCHAR(64),
   source_id VARCHAR(128),
@@ -222,9 +238,13 @@ BEGIN
   ALTER TABLE store_inventory ADD COLUMN IF NOT EXISTS total_quantity DECIMAL(14,3) NOT NULL DEFAULT 0;
   ALTER TABLE store_inventory ADD COLUMN IF NOT EXISTS unit VARCHAR(32) NOT NULL DEFAULT 'PCS';
   ALTER TABLE store_inventory ADD COLUMN IF NOT EXISTS price_per_piece DECIMAL(14,2) NOT NULL DEFAULT 0;
+  ALTER TABLE store_inventory ADD COLUMN IF NOT EXISTS storekeeper_price DECIMAL(14,2) NOT NULL DEFAULT 0;
   ALTER TABLE store_inventory ADD COLUMN IF NOT EXISTS total_value DECIMAL(14,2) NOT NULL DEFAULT 0;
   ALTER TABLE store_inventory ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+  ALTER TABLE store_inventory ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false;
   ALTER TABLE store_inventory ADD COLUMN IF NOT EXISTS updated_by VARCHAR(64);
+
+  ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS storekeeper_price DECIMAL(14,2) NOT NULL DEFAULT 0;
 
   ALTER TABLE store_inventory ALTER COLUMN quantity_cartons TYPE DECIMAL(14,3) USING COALESCE(quantity_cartons, 0)::DECIMAL(14,3);
   ALTER TABLE store_inventory ALTER COLUMN quantity_per_carton TYPE DECIMAL(14,3) USING COALESCE(quantity_per_carton, 1)::DECIMAL(14,3);

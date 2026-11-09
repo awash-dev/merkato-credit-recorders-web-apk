@@ -11,7 +11,7 @@ class LineItem {
   double? cartons;
   double? pcsPerCarton;
   double? customs;
-  String? packagingUnit; // 'Carton', 'Pcs', 'Dozen', 'Box', 'Roll', 'Meter', 'Bag', 'Other'
+  String? packagingUnit; // 'Carton', 'Pcs', 'Roll', 'Other'
   String? date;
   String? notes;
 

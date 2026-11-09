@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:et_date_picker/et_date_picker.dart';
 import '../models/ledger_record.dart';
 import '../models/line_item.dart';
+import '../models/inventory_product.dart';
+import '../services/api_service.dart';
 import '../services/language_service.dart';
 import '../services/ethiopian_calendar.dart';
 
@@ -58,11 +60,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
   static const List<String> _packagingUnits = [
     'Carton',
     'Pcs',
-    'Dozen',
-    'Box',
     'Roll',
-    'Meter',
-    'Bag',
     'Other',
   ];
 
@@ -92,9 +90,23 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
     'Other',
   ];
 
+  List<InventoryProduct> _inventoryProducts = [];
+
+  Future<void> _loadStoreProducts() async {
+    try {
+      final prods = await ApiService.getInventoryProducts(storeId: widget.storeId);
+      if (mounted) {
+        setState(() {
+          _inventoryProducts = prods;
+        });
+      }
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
+    _loadStoreProducts();
     final rec = widget.editingRecord;
     _titleController = TextEditingController(
       text: rec?.title ?? widget.initialPartyName ?? '',
@@ -201,6 +213,11 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
 
   List<String> get _dynamicStockSuggestions {
     final Set<String> items = {..._stockSuggestions};
+    for (final p in _inventoryProducts) {
+      if (p.productName.trim().isNotEmpty) {
+        items.add(p.productName.trim());
+      }
+    }
     if (widget.existingRecords != null) {
       for (final r in widget.existingRecords!) {
         if (r.type == 'stock' && r.title.trim().isNotEmpty) {
@@ -1180,6 +1197,33 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                             currentItem.priceController.text = match.unitPrice.truncateToDouble() == match.unitPrice
                                 ? match.unitPrice.toInt().toString()
                                 : match.unitPrice.toString();
+                          }
+                        } else {
+                          final matchedProd = _inventoryProducts.firstWhere(
+                            (p) => p.productName.trim().toLowerCase() == selection.trim().toLowerCase(),
+                            orElse: () => InventoryProduct(id: '', productName: '', currentQuantity: 0, unitPrice: 0),
+                          );
+                          if (matchedProd.id.isNotEmpty) {
+                            if (matchedProd.pcsPerCarton > 0) {
+                              currentItem.pcsController.text = matchedProd.pcsPerCarton % 1 == 0
+                                  ? matchedProd.pcsPerCarton.toInt().toString()
+                                  : matchedProd.pcsPerCarton.toString();
+                            }
+                            final singlePrice = matchedProd.storekeeperPrice > 0
+                                ? matchedProd.storekeeperPrice
+                                : (matchedProd.pricePerPiece > 0 ? matchedProd.pricePerPiece : matchedProd.unitPrice);
+                            if (singlePrice > 0) {
+                              currentItem.priceController.text = singlePrice % 1 == 0
+                                  ? singlePrice.toInt().toString()
+                                  : singlePrice.toStringAsFixed(2);
+                            }
+                            if (matchedProd.unit.toUpperCase() == 'ROLL') {
+                              currentItem.packagingUnit = 'Roll';
+                            } else if (matchedProd.pcsPerCarton > 1) {
+                              currentItem.packagingUnit = 'Carton';
+                            } else {
+                              currentItem.packagingUnit = 'Pcs';
+                            }
                           }
                         }
                         setState(() {});

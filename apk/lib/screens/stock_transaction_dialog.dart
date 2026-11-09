@@ -136,8 +136,12 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
         : '1';
 
     final price = _movementType == 'OUT'
-        ? (prod.unitPrice > 0 ? prod.unitPrice : prod.costPrice)
-        : (prod.costPrice > 0 ? prod.costPrice : prod.unitPrice);
+        ? (prod.storekeeperPrice > 0
+            ? prod.storekeeperPrice
+            : (prod.unitPrice > 0 ? prod.unitPrice : prod.costPrice))
+        : (prod.costPrice > 0
+            ? prod.costPrice
+            : (prod.storekeeperPrice > 0 ? prod.storekeeperPrice : prod.unitPrice));
 
     setState(() {
       _selectedProduct = prod;
@@ -164,8 +168,12 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                   : fresh.pcsPerCarton.toString())
               : '1';
           final freshPrice = _movementType == 'OUT'
-              ? (fresh.unitPrice > 0 ? fresh.unitPrice : fresh.costPrice)
-              : (fresh.costPrice > 0 ? fresh.costPrice : fresh.unitPrice);
+              ? (fresh.storekeeperPrice > 0
+                  ? fresh.storekeeperPrice
+                  : (fresh.unitPrice > 0 ? fresh.unitPrice : fresh.costPrice))
+              : (fresh.costPrice > 0
+                  ? fresh.costPrice
+                  : (fresh.storekeeperPrice > 0 ? fresh.storekeeperPrice : fresh.unitPrice));
 
           setState(() {
             _selectedProduct = fresh;

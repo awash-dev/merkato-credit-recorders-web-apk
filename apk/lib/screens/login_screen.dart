@@ -19,10 +19,40 @@ class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _rememberPassword = true;
   bool _isLoading = false;
   String? _errorMessage;
 
   bool get _isAmharic => LanguageService.isAmharic;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedPhone = prefs.getString('last_login_phone') ?? '';
+      final savedPassword = prefs.getString('saved_password') ?? '';
+      final remember = prefs.getBool('remember_password') ?? true;
+
+      if (mounted) {
+        setState(() {
+          _rememberPassword = remember;
+          if (savedPhone.isNotEmpty) {
+            _phoneController.text = savedPhone;
+          }
+          if (remember && savedPassword.isNotEmpty) {
+            _passwordController.text = savedPassword;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading saved credentials: $e');
+    }
+  }
 
   @override
   void dispose() {
@@ -64,14 +94,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final user = await ApiService.login(phone, password);
+
+      // Trigger OS Password Manager prompt (Samsung Pass, Google Autofill, iOS Keychain, Browser)
+      TextInput.finishAutofillContext(shouldSave: _rememberPassword);
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('last_login_phone', phone);
+      await prefs.setBool('remember_password', _rememberPassword);
+      if (_rememberPassword) {
+        await prefs.setString('saved_password', password);
+      } else {
+        await prefs.remove('saved_password');
+      }
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => MainScreen(currentUser: user)),
       );
     } catch (e) {
+      // Don't save wrong password to password manager
+      TextInput.finishAutofillContext(shouldSave: false);
+
       final msg = e.toString().replaceAll('Exception:', '').trim();
       setState(() {
         if (msg.contains('Socket') ||
@@ -228,70 +271,162 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(height: 14),
                           ],
 
-                          // Phone Number
-                          TextField(
-                            controller: _phoneController,
-                            keyboardType: TextInputType.phone,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                RegExp(r'[0-9+\-() ]'),
-                              ),
-                            ],
-                            decoration: InputDecoration(
-                              labelText: _isAmharic ? 'ስልክ ቁጥር' : 'Phone Number',
-                              hintText: _isAmharic ? 'ምሳሌ፦ 0911223344' : 'e.g. 0911223344',
-                              prefixIcon: const Icon(
-                                Icons.phone_outlined,
-                                size: 20,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 12,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-
-                          // Password Field
-                          TextField(
-                            controller: _passwordController,
-                            obscureText: _obscurePassword,
-                            decoration: InputDecoration(
-                              labelText: _isAmharic ? 'የይለፍ ቃል' : 'Password',
-                              hintText: '••••••••',
-                              prefixIcon: const Icon(
-                                Icons.lock_outline,
-                                size: 20,
-                              ),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscurePassword
-                                      ? Icons.visibility_outlined
-                                      : Icons.visibility_off_outlined,
-                                  size: 20,
-                                  color: isDark
-                                      ? const Color(0xFF94A3B8)
-                                      : const Color(0xFF64748B),
+                          // AutofillGroup enables Samsung Pass, Google Password Manager, Apple Keychain, and browser autofill
+                          AutofillGroup(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // Phone Number
+                                TextField(
+                                  controller: _phoneController,
+                                  keyboardType: TextInputType.phone,
+                                  autofillHints: const [
+                                    AutofillHints.username,
+                                    AutofillHints.telephoneNumber,
+                                  ],
+                                  textInputAction: TextInputAction.next,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'[0-9+\-() ]'),
+                                    ),
+                                  ],
+                                  decoration: InputDecoration(
+                                    labelText: _isAmharic ? 'ስልክ ቁጥር' : 'Phone Number',
+                                    hintText: _isAmharic ? 'ምሳሌ፦ 0911223344' : 'e.g. 0911223344',
+                                    prefixIcon: const Icon(
+                                      Icons.phone_outlined,
+                                      size: 20,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 12,
+                                    ),
+                                  ),
                                 ),
-                                onPressed: () {
-                                  setState(
-                                    () => _obscurePassword = !_obscurePassword,
-                                  );
-                                },
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 12,
+                                const SizedBox(height: 14),
+
+                                // Password Field
+                                TextField(
+                                  controller: _passwordController,
+                                  obscureText: _obscurePassword,
+                                  autofillHints: const [
+                                    AutofillHints.password,
+                                  ],
+                                  textInputAction: TextInputAction.done,
+                                  onSubmitted: (_) => _handleLogin(),
+                                  decoration: InputDecoration(
+                                    labelText: _isAmharic ? 'የይለፍ ቃል' : 'Password',
+                                    hintText: '••••••••',
+                                    prefixIcon: const Icon(
+                                      Icons.lock_outline,
+                                      size: 20,
+                                    ),
+                                    suffixIcon: IconButton(
+                                      icon: Icon(
+                                        _obscurePassword
+                                            ? Icons.visibility_outlined
+                                            : Icons.visibility_off_outlined,
+                                        size: 20,
+                                        color: isDark
+                                            ? const Color(0xFF94A3B8)
+                                            : const Color(0xFF64748B),
+                                      ),
+                                      onPressed: () {
+                                        setState(
+                                          () => _obscurePassword = !_obscurePassword,
+                                        );
+                                      },
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Save / Remember Password Option (Samsung Pass, Google Autofill & App Memory)
+                          InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () {
+                              setState(() {
+                                _rememberPassword = !_rememberPassword;
+                              });
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: Checkbox(
+                                      value: _rememberPassword,
+                                      activeColor: const Color(0xFF2563EB),
+                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      onChanged: (val) {
+                                        setState(() {
+                                          _rememberPassword = val ?? true;
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Wrap(
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: [
+                                        Text(
+                                          _isAmharic
+                                              ? 'የይለፍ ቃል አስቀምጥ'
+                                              : 'Save Password',
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: theme.colorScheme.onSurface,
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(
+                                              color: const Color(0xFF2563EB).withValues(alpha: 0.25),
+                                              width: 0.8,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Samsung Pass / Google',
+                                            style: TextStyle(
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF2563EB),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 16),
 
                           // Submit Button
                           SizedBox(

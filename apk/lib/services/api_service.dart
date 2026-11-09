@@ -20,34 +20,128 @@ import 'neon_database_service.dart';
 class ApiService {
   static const String keyToken = 'merkato_token';
   static const String keyUser = 'merkato_user';
+  static const String keySessionExpiry = 'merkato_session_expiry';
+  static const String keySessionCreatedAt = 'merkato_session_created_at';
   static const String keyActiveStoreId = 'merkato_active_store_id';
+
+  /// 30 days session validity duration (30 days * 24h * 60m * 60s * 1000ms = 2,592,000,000 ms)
+  static const int sessionDurationMs = 30 * 24 * 60 * 60 * 1000;
 
   static Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(keyToken);
   }
 
+  /// Retrieves cached user session.
+  /// If session is valid and within 30 days: returns the user.
+  /// If session has expired (>= 30 days) or is invalid: removes from local storage and returns null.
   static Future<AppUser?> getStoredUser() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(keyUser);
-    if (raw == null) return null;
-    try {
-      return AppUser.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-    } catch (_) {
+    final token = prefs.getString(keyToken);
+    final expiry = prefs.getInt(keySessionExpiry);
+    final createdAt = prefs.getInt(keySessionCreatedAt);
+
+    if (raw == null || token == null) {
+      await clearSession();
       return null;
+    }
+
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+
+    // 30 days expiration check:
+    // If expiry timestamp is missing or current time exceeds 30 days window:
+    final isExpired = (expiry == null || nowMs >= expiry) ||
+        (createdAt != null && (nowMs - createdAt) >= sessionDurationMs);
+
+    if (isExpired) {
+      // 30 days passed: remove from local storage and require login
+      await clearSession();
+      return null;
+    }
+
+    // Parse cached user
+    AppUser? user;
+    try {
+      user = AppUser.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      await clearSession();
+      return null;
+    }
+
+    // Verify session validity directly against Neon database if reachable
+    try {
+      final isValid = await NeonDatabaseService.isSessionValidDirect(token);
+      if (!isValid) {
+        // Deactivated or invalidated remotely: clear local storage
+        await clearSession();
+        return null;
+      }
+    } catch (_) {
+      // Offline fallback: within 30 days local cache is honored
+    }
+
+    return user;
+  }
+
+  /// Saves session both to local storage (authoritative for 30 days) and Neon sessions table.
+  static Future<void> saveSession(
+    String token,
+    AppUser user, {
+    int? createdAt,
+    int? expiresAt,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final nowMs = createdAt ?? DateTime.now().millisecondsSinceEpoch;
+    final expMs = expiresAt ?? (nowMs + sessionDurationMs);
+
+    await prefs.setString(keyToken, token);
+    await prefs.setString(keyUser, jsonEncode(user.toJson()));
+    await prefs.setInt(keySessionCreatedAt, nowMs);
+    await prefs.setInt(keySessionExpiry, expMs);
+
+    // Save session to remote Neon sessions table
+    try {
+      await NeonDatabaseService.saveSessionDirect(
+        token: token,
+        userId: user.id,
+        createdAt: nowMs,
+        expiresAt: expMs,
+      );
+    } catch (_) {
+      // Non-fatal if offline
     }
   }
 
-  static Future<void> saveSession(String token, AppUser user) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(keyToken, token);
-    await prefs.setString(keyUser, jsonEncode(user.toJson()));
-  }
-
+  /// Removes session completely from local storage and cleans up database session.
   static Future<void> clearSession() async {
     final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(keyToken);
+    final rawUser = prefs.getString(keyUser);
+    String? userId;
+    if (rawUser != null) {
+      try {
+        final decoded = jsonDecode(rawUser);
+        userId = decoded['id']?.toString();
+      } catch (_) {}
+    }
+
+    // Clean all session-related keys from local storage
     await prefs.remove(keyToken);
     await prefs.remove(keyUser);
+    await prefs.remove(keySessionExpiry);
+    await prefs.remove(keySessionCreatedAt);
+    await prefs.remove(keyActiveStoreId);
+
+    // Clean up session in remote database
+    if (token != null) {
+      try {
+        await NeonDatabaseService.deleteSessionDirect(
+          token: token,
+          userId: userId,
+        );
+      } catch (_) {}
+    }
   }
 
   static Future<String?> getActiveStoreId() async {
@@ -70,8 +164,14 @@ class ApiService {
     if (user == null) {
       throw Exception('Invalid phone number or password');
     }
-    final token = 'neon-session-${DateTime.now().millisecondsSinceEpoch}';
-    await saveSession(token, user);
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final token = 'neon-session-$nowMs-${user.id}';
+    await saveSession(
+      token,
+      user,
+      createdAt: nowMs,
+      expiresAt: nowMs + sessionDurationMs,
+    );
     return user;
   }
 
@@ -149,24 +249,62 @@ class ApiService {
   }) async {
     final records = await getRecords();
     final idx = records.indexWhere((r) => r.id == recordId);
-    if (idx == -1) {
-      throw Exception('Record not found for ID: $recordId');
-    }
-    final rec = records[idx];
-    final updatedItems = rec.items.map((it) {
-      if (it.id == itemId) {
-        it.name = description;
-        it.quantity = quantity;
-        it.unitPrice = unitPrice;
-        it.date = date;
-        if (bank != null) it.bank = bank;
-        if (notes != null) it.notes = notes;
-      }
-      return it;
-    }).toList();
+    if (idx != -1) {
+      final rec = records[idx];
+      bool itemFound = false;
+      final updatedItems = rec.items.map((it) {
+        if (it.id == itemId) {
+          itemFound = true;
+          it.name = description;
+          it.quantity = quantity;
+          it.unitPrice = unitPrice;
+          if (it.pcsPerCarton != null && it.pcsPerCarton! > 0) {
+            it.cartons = quantity / it.pcsPerCarton!;
+          }
+          it.date = date;
+          if (bank != null) it.bank = bank;
+          if (notes != null) it.notes = notes;
+        }
+        return it;
+      }).toList();
 
-    final updatedRec = rec.copyWith(items: updatedItems);
-    await updateRecord(updatedRec);
+      if (!itemFound) {
+        for (final it in updatedItems) {
+          if (it.name.trim().toLowerCase() == description.trim().toLowerCase() || updatedItems.length == 1) {
+            it.name = description;
+            it.quantity = quantity;
+            it.unitPrice = unitPrice;
+            if (it.pcsPerCarton != null && it.pcsPerCarton! > 0) {
+              it.cartons = quantity / it.pcsPerCarton!;
+            }
+            it.date = date;
+            if (bank != null) it.bank = bank;
+            if (notes != null) it.notes = notes;
+            itemFound = true;
+            break;
+          }
+        }
+      }
+
+      final updatedRec = rec.copyWith(items: updatedItems);
+      await updateRecord(updatedRec);
+      return;
+    }
+
+    // Fallback: check if this is a delala entry
+    try {
+      await updateDelalaEntry(
+        id: itemId,
+        productName: description,
+        unitPrice: unitPrice,
+        pieces: quantity,
+        transactionDate: date,
+        notes: notes,
+      );
+      return;
+    } catch (_) {}
+
+    throw Exception('Record not found for ID: $recordId');
   }
 
   /// Resolves a store's display name straight from the stores table.
@@ -623,6 +761,7 @@ class ApiService {
     double openingLoosePieces = 0,
     double minimumStock = 0,
     double costPrice = 0,
+    double? storekeeperPrice,
     String? storeId,
     String? category,
     String? supplierName,
@@ -638,6 +777,7 @@ class ApiService {
       openingLoosePieces: openingLoosePieces,
       minimumStock: minimumStock,
       costPrice: costPrice,
+      storekeeperPrice: storekeeperPrice,
       storeId: storeId,
       category: category,
       supplierName: supplierName,
@@ -690,6 +830,7 @@ class ApiService {
     String? productName,
     double? unitPrice,
     double? costPrice,
+    double? storekeeperPrice,
     double? pcsPerCarton,
     double? quantityCartons,
     double? minimumStock,
@@ -704,6 +845,7 @@ class ApiService {
       productName: productName,
       unitPrice: unitPrice,
       costPrice: costPrice,
+      storekeeperPrice: storekeeperPrice,
       pcsPerCarton: pcsPerCarton,
       quantityCartons: quantityCartons,
       minimumStock: minimumStock,

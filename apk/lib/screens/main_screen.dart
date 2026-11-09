@@ -8,6 +8,7 @@ import '../models/ledger_record.dart';
 import '../services/api_service.dart';
 import '../services/language_service.dart';
 import '../services/app_settings_service.dart';
+import '../services/ethiopian_calendar.dart';
 import 'login_screen.dart';
 import 'record_form_dialog.dart';
 import 'statement_screen.dart';
@@ -427,7 +428,8 @@ class _MainScreenState extends State<MainScreen> {
         activeTab: record.type,
         existingRecords: _records,
         initialPartyName: record.title,
-        storeId: record.storeId ??
+        storeId:
+            record.storeId ??
             (_selectedStoreId == 'all' ? null : _selectedStoreId),
       ),
     );
@@ -600,8 +602,9 @@ class _MainScreenState extends State<MainScreen> {
   }) {
     final textColor = isDark ? Colors.white : Colors.black;
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569);
-    final borderColor =
-        isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+    final borderColor = isDark
+        ? const Color(0xFF334155)
+        : const Color(0xFFE2E8F0);
     final bgColor = isDark ? const Color(0xFF1E293B) : Colors.white;
 
     return Container(
@@ -730,8 +733,8 @@ class _MainScreenState extends State<MainScreen> {
         subtitle: isReceivable
             ? (_isAmharic ? 'ተሰብሳቢ' : 'Receivable')
             : (isOverpaid
-                ? (_isAmharic ? 'ትርፍ' : 'Overpaid')
-                : (_isAmharic ? 'ተወራርዷል' : 'Settled')),
+                  ? (_isAmharic ? 'ትርፍ' : 'Overpaid')
+                  : (_isAmharic ? 'ተወራርዷል' : 'Settled')),
         valueColor: isReceivable
             ? const Color(0xFFDC2626)
             : const Color(0xFF16A34A),
@@ -777,8 +780,8 @@ class _MainScreenState extends State<MainScreen> {
         subtitle: isPayable
             ? (_isAmharic ? 'ተከፋይ' : 'Payable')
             : (isAdvance
-                ? (_isAmharic ? 'ቅድመ' : 'Advance')
-                : (_isAmharic ? 'ተወራርዷል' : 'Settled')),
+                  ? (_isAmharic ? 'ቅድመ' : 'Advance')
+                  : (_isAmharic ? 'ተወራርዷል' : 'Settled')),
         valueColor: isPayable
             ? const Color(0xFFDC2626)
             : const Color(0xFF16A34A),
@@ -792,7 +795,8 @@ class _MainScreenState extends State<MainScreen> {
           if (it.sign == '+') {
             totalBorrowedPrice += it.subtotal;
           } else {
-            final isItemReturn = it.packagingUnit != 'Payment' &&
+            final isItemReturn =
+                it.packagingUnit != 'Payment' &&
                 (it.customType == 'Item Return' ||
                     (it.quantity > 0 &&
                         it.name.trim().toLowerCase() != 'payment'));
@@ -837,8 +841,8 @@ class _MainScreenState extends State<MainScreen> {
         subtitle: isReceivable
             ? (_isAmharic ? 'ተሰብሳቢ' : 'Receivable')
             : (isPayable
-                ? (_isAmharic ? 'ተከፋይ' : 'Payable')
-                : (_isAmharic ? 'ተወራርዷል' : 'Settled')),
+                  ? (_isAmharic ? 'ተከፋይ' : 'Payable')
+                  : (_isAmharic ? 'ተወራርዷል' : 'Settled')),
         valueColor: isReceivable
             ? const Color(0xFFDC2626)
             : const Color(0xFF16A34A),
@@ -850,8 +854,9 @@ class _MainScreenState extends State<MainScreen> {
       for (final prod in _inventoryProducts) {
         final pcs = prod.currentQuantity;
         totalPieces += pcs;
-        totalStoreValue +=
-            (prod.totalValue > 0 ? prod.totalValue : pcs * prod.costPrice);
+        totalStoreValue += (prod.totalValue > 0
+            ? prod.totalValue
+            : pcs * prod.costPrice);
       }
 
       // Card 1: Valuation
@@ -861,8 +866,9 @@ class _MainScreenState extends State<MainScreen> {
         mainValue: widget.currentUser.isAdmin
             ? _currencyFormat.format(totalStoreValue)
             : '•••',
-        currencyPrefix:
-            widget.currentUser.isAdmin ? (_isAmharic ? 'ብር' : 'ETB') : null,
+        currencyPrefix: widget.currentUser.isAdmin
+            ? (_isAmharic ? 'ብር' : 'ETB')
+            : null,
         subtitle: widget.currentUser.isAdmin
             ? (_isAmharic ? 'ጠቅላላ' : 'Total')
             : (_isAmharic ? 'አድሚን' : 'Admin'),
@@ -1178,15 +1184,14 @@ class _MainScreenState extends State<MainScreen> {
                     final titleController = TextEditingController(
                       text: AppSettingsService.appTitleNotifier.value,
                     );
-                    final logoController = TextEditingController(
-                      text: AppSettingsService.appLogoNotifier.value ?? '',
-                    );
 
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _isAmharic ? 'የንግድ ስም እና ሎጎ' : 'Business Branding & Logo',
+                          _isAmharic
+                              ? 'የንግድ ስም እና ሎጎ'
+                              : 'Business Branding & Logo',
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
@@ -1213,29 +1218,108 @@ class _MainScreenState extends State<MainScreen> {
                           ],
                         ),
                         const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
+                        Row(
                           children: [
-                            _buildLogoPresetChip('store', 'Store', Icons.storefront_rounded, setLocalState),
-                            _buildLogoPresetChip('cart', 'Cart', Icons.shopping_cart_rounded, setLocalState),
-                            _buildLogoPresetChip('diamond', 'Diamond', Icons.diamond_rounded, setLocalState),
-                            _buildLogoPresetChip('building', 'Building', Icons.domain_rounded, setLocalState),
-                            _buildLogoPresetChip('star', 'Star', Icons.stars_rounded, setLocalState),
-                            _buildLogoPresetChip('business', 'Trade', Icons.business_center_rounded, setLocalState),
+                            ElevatedButton.icon(
+                              onPressed: () async {
+                                try {
+                                  final success =
+                                      await AppSettingsService.pickAndSaveLogo();
+                                  if (success) {
+                                    setLocalState(() {});
+                                    if (mounted) setState(() {});
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          _isAmharic
+                                              ? 'የሎጎ ምስል በተሳካ ሁኔታ ተጭኗል!'
+                                              : 'Logo image uploaded successfully!',
+                                        ),
+                                        backgroundColor: const Color(
+                                          0xFF16A34A,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Logo upload error: $e'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                              icon: const Icon(
+                                Icons.add_photo_alternate_rounded,
+                                size: 16,
+                              ),
+                              label: Text(
+                                _isAmharic ? 'የሎጎ ምስል ጫን' : 'Upload Logo Image',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2563EB),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                            if (AppSettingsService.hasCustomLogo) ...[
+                              const SizedBox(width: 8),
+                              OutlinedButton.icon(
+                                onPressed: () async {
+                                  await AppSettingsService.resetToDefaultLogo();
+                                  setLocalState(() {});
+                                  if (mounted) setState(() {});
+                                },
+                                icon: const Icon(
+                                  Icons.restore_rounded,
+                                  size: 15,
+                                ),
+                                label: Text(
+                                  _isAmharic ? 'ነባሪ ሎጎ' : 'Reset to Default',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 10),
                         TextField(
                           controller: titleController,
                           decoration: InputDecoration(
-                            labelText: _isAmharic ? 'የመተግበሪያ / የንግድ ስም' : 'App / Business Title',
+                            labelText: _isAmharic
+                                ? 'የመተግበሪያ / የንግድ ስም'
+                                : 'App / Business Title',
                             isDense: true,
                             border: const OutlineInputBorder(),
                             suffixIcon: IconButton(
                               icon: const Icon(Icons.check, size: 18),
                               onPressed: () async {
-                                await AppSettingsService.setAppTitle(titleController.text);
+                                await AppSettingsService.setAppTitle(
+                                  titleController.text,
+                                );
                                 setLocalState(() {});
                                 if (mounted) setState(() {});
                               },
@@ -1243,29 +1327,6 @@ class _MainScreenState extends State<MainScreen> {
                           ),
                           onSubmitted: (val) async {
                             await AppSettingsService.setAppTitle(val);
-                            setLocalState(() {});
-                            if (mounted) setState(() {});
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: logoController,
-                          decoration: InputDecoration(
-                            labelText: _isAmharic ? 'የሎጎ Image URL ወይም Base64' : 'Logo Image URL / Base64',
-                            isDense: true,
-                            border: const OutlineInputBorder(),
-                            hintText: 'https://... or base64:...',
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.check, size: 18),
-                              onPressed: () async {
-                                await AppSettingsService.setAppLogo(logoController.text);
-                                setLocalState(() {});
-                                if (mounted) setState(() {});
-                              },
-                            ),
-                          ),
-                          onSubmitted: (val) async {
-                            await AppSettingsService.setAppLogo(val);
                             setLocalState(() {});
                             if (mounted) setState(() {});
                           },
@@ -1284,21 +1345,24 @@ class _MainScreenState extends State<MainScreen> {
                     color: Color(0xFF2563EB),
                   ),
                   title: Text(
-                    _isAmharic ? 'የመደብር ሠራተኞች አስተዳደር' : 'Manage Storekeepers',
+                    _isAmharic
+                        ? 'የመደብሮችና ሠራተኞች አስተዳደር'
+                        : 'Manage Stores & Storekeepers',
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(ctx);
-                    Navigator.push(
+                    await Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => const AdminUsersScreen(),
                       ),
                     );
+                    _loadStoresAndRecords();
                   },
                 ),
               ],
@@ -1306,51 +1370,6 @@ class _MainScreenState extends State<MainScreen> {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildLogoPresetChip(
-    String key,
-    String label,
-    IconData icon,
-    StateSetter setLocalState,
-  ) {
-    final isSelected = AppSettingsService.appLogoNotifier.value == key;
-    return InkWell(
-      onTap: () async {
-        await AppSettingsService.setAppLogo(key);
-        setLocalState(() {});
-        if (mounted) setState(() {});
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF2563EB) : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 13,
-              color: isSelected ? Colors.white : const Color(0xFF64748B),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-                color: isSelected ? Colors.white : const Color(0xFF334155),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1539,7 +1558,10 @@ class _MainScreenState extends State<MainScreen> {
         ? const Color(0xFF2E384D)
         : const Color(0xFFCBD5E1);
 
-    final unitPrice = prod.unitPrice > 0 ? prod.unitPrice : prod.costPrice;
+    final unitPrice =
+        widget.currentUser.isStorekeeper && prod.storekeeperPrice > 0
+        ? prod.storekeeperPrice
+        : (prod.unitPrice > 0 ? prod.unitPrice : prod.costPrice);
     final totalVal = prod.currentQuantity * unitPrice;
 
     return Container(
@@ -2037,7 +2059,10 @@ class _MainScreenState extends State<MainScreen> {
             // Card Footer: Action buttons (Storekeeper only; Admin is View Mode Only)
             if (!widget.currentUser.isAdmin)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: isDark
                       ? const Color(0xFF242C40)
@@ -2224,18 +2249,26 @@ class _MainScreenState extends State<MainScreen> {
                         if ((rec.notes != null && rec.notes!.isNotEmpty) ||
                             rec.date.isNotEmpty) ...[
                           const SizedBox(height: 1.5),
-                          Text(
-                            rec.notes != null && rec.notes!.isNotEmpty
-                                ? '${rec.date} · ${rec.notes}'
-                                : rec.date,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: isDark
-                                  ? const Color(0xFF94A3B8)
-                                  : const Color(0xFF64748B),
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          Builder(
+                            builder: (context) {
+                              final ethDate = EthiopianCalendar.formatAnyDate(
+                                rec.date,
+                                lang: _isAmharic ? 'am' : 'en',
+                              );
+                              return Text(
+                                rec.notes != null && rec.notes!.isNotEmpty
+                                    ? '$ethDate · ${rec.notes}'
+                                    : ethDate,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isDark
+                                      ? const Color(0xFF94A3B8)
+                                      : const Color(0xFF64748B),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              );
+                            },
                           ),
                         ],
                       ],
@@ -2246,20 +2279,32 @@ class _MainScreenState extends State<MainScreen> {
                   // Price side with pcs underneath (Image 2) and red/green text colors
                   Builder(
                     builder: (context) {
-                      final totalRecordPcs = rec.items.fold<double>(0.0, (sum, item) {
+                      final totalRecordPcs = rec.items.fold<double>(0.0, (
+                        sum,
+                        item,
+                      ) {
                         double pcs = 0;
-                        if (item.cartons != null && item.cartons! > 0 && item.pcsPerCarton != null && item.pcsPerCarton! > 0) {
+                        if (item.cartons != null &&
+                            item.cartons! > 0 &&
+                            item.pcsPerCarton != null &&
+                            item.pcsPerCarton! > 0) {
                           pcs = item.cartons! * item.pcsPerCarton!;
-                        } else if (item.packagingUnit != 'Payment' && item.quantity > 0) {
+                        } else if (item.packagingUnit != 'Payment' &&
+                            item.quantity > 0) {
                           pcs = item.quantity;
                         }
                         if (item.sign == '+') {
                           return sum + pcs;
                         } else {
-                          final isItemReturn = item.packagingUnit != 'Payment' &&
+                          final isItemReturn =
+                              item.packagingUnit != 'Payment' &&
                               (item.customType == 'Item Return' ||
                                   item.customType == 'Return' ||
-                                  (item.bank == null && item.quantity > 0 && !item.name.toLowerCase().startsWith('payment')));
+                                  (item.bank == null &&
+                                      item.quantity > 0 &&
+                                      !item.name.toLowerCase().startsWith(
+                                        'payment',
+                                      )));
                           if (isItemReturn) {
                             return sum - pcs;
                           }
@@ -2521,13 +2566,16 @@ class _MainScreenState extends State<MainScreen> {
                       final pcs = item.pcsPerCarton ?? 0;
                       final unit =
                           item.packagingUnit ?? (ctns > 0 ? 'Carton' : 'Pcs');
-                      final isItemReturn = item.sign == '-' &&
+                      final isItemReturn =
+                          item.sign == '-' &&
                           item.packagingUnit != 'Payment' &&
                           (item.customType == 'Item Return' ||
                               item.customType == 'Return' ||
                               (item.bank == null &&
                                   item.quantity > 0 &&
-                                  !item.name.toLowerCase().startsWith('payment')));
+                                  !item.name.toLowerCase().startsWith(
+                                    'payment',
+                                  )));
                       final isPayment = item.sign == '-' && !isItemReturn;
                       final packDetail = isPayment
                           ? (bank != null && bank.isNotEmpty
@@ -2541,11 +2589,21 @@ class _MainScreenState extends State<MainScreen> {
                                             ? '${item.quantity.toInt()} $unit'
                                             : null)));
 
-                      final displayName = (rec.type == 'delala' && isPayment && (item.name.toLowerCase().contains('payment') || item.name.isEmpty))
+                      final displayName =
+                          (rec.type == 'delala' &&
+                              isPayment &&
+                              (item.name.toLowerCase().contains('payment') ||
+                                  item.name.isEmpty))
                           ? (_isAmharic ? 'የብር ክፍያ' : 'Payment')
-                          : (rec.type == 'delala' && item.sign == '+' && bank != null && bank.isNotEmpty && (item.name.toLowerCase().contains('payment') || item.name.toLowerCase().contains('cash') || item.name.isEmpty))
-                              ? (_isAmharic ? 'የብር ውሰት' : 'Cash Borrow')
-                              : item.name;
+                          : (rec.type == 'delala' &&
+                                item.sign == '+' &&
+                                bank != null &&
+                                bank.isNotEmpty &&
+                                (item.name.toLowerCase().contains('payment') ||
+                                    item.name.toLowerCase().contains('cash') ||
+                                    item.name.isEmpty))
+                          ? (_isAmharic ? 'የብር ውሰት' : 'Cash Borrow')
+                          : item.name;
 
                       return Container(
                         padding: const EdgeInsets.symmetric(
@@ -2610,7 +2668,8 @@ class _MainScreenState extends State<MainScreen> {
                                             style: TextStyle(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w700,
-                                              color: theme.colorScheme.onSurface,
+                                              color:
+                                                  theme.colorScheme.onSurface,
                                             ),
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
@@ -2621,14 +2680,26 @@ class _MainScreenState extends State<MainScreen> {
                                     Builder(
                                       builder: (context) {
                                         final subDetails = <String>[];
-                                        if (rec.type == 'delala' && bank != null && bank.isNotEmpty) {
-                                          subDetails.add(_isAmharic ? 'ባንክ፦ $bank' : 'Bank: $bank');
-                                        } else if (packDetail != null && packDetail.isNotEmpty) {
+                                        if (rec.type == 'delala' &&
+                                            bank != null &&
+                                            bank.isNotEmpty) {
+                                          subDetails.add(
+                                            _isAmharic
+                                                ? 'ባንክ፦ $bank'
+                                                : 'Bank: $bank',
+                                          );
+                                        } else if (packDetail != null &&
+                                            packDetail.isNotEmpty) {
                                           subDetails.add(packDetail);
                                         }
                                         if (item.date != null &&
                                             item.date!.isNotEmpty) {
-                                          subDetails.add(item.date!);
+                                          subDetails.add(
+                                            EthiopianCalendar.formatAnyDate(
+                                              item.date!,
+                                              lang: _isAmharic ? 'am' : 'en',
+                                            ),
+                                          );
                                         }
                                         if (item.notes != null &&
                                             item.notes!.isNotEmpty) {
@@ -2699,13 +2770,15 @@ class _MainScreenState extends State<MainScreen> {
                                 child: Text(
                                   item.sign == '-'
                                       ? (isItemReturn
-                                          ? '-${item.quantity.toInt()}'
-                                          : '-')
+                                            ? '-${item.quantity.toInt()}'
+                                            : '-')
                                       : (rec.type == 'delala'
-                                          ? (bank != null && bank.isNotEmpty && ctns == 0
-                                              ? '-'
-                                              : '+${item.quantity.toInt()}')
-                                          : '${item.quantity.toInt()}'),
+                                            ? (bank != null &&
+                                                      bank.isNotEmpty &&
+                                                      ctns == 0
+                                                  ? '-'
+                                                  : '+${item.quantity.toInt()}')
+                                            : '${item.quantity.toInt()}'),
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 11,
@@ -2735,8 +2808,8 @@ class _MainScreenState extends State<MainScreen> {
                                   item.sign == '-'
                                       ? '-${_currencyFormat.format(subtotal)}'
                                       : (rec.type == 'delala'
-                                          ? '+${_currencyFormat.format(subtotal)}'
-                                          : _currencyFormat.format(subtotal)),
+                                            ? '+${_currencyFormat.format(subtotal)}'
+                                            : _currencyFormat.format(subtotal)),
                                   textAlign: TextAlign.right,
                                   style: TextStyle(
                                     fontSize: 11.5,
@@ -3150,197 +3223,204 @@ class _MainScreenState extends State<MainScreen> {
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : RefreshIndicator(
-              onRefresh: _reloadRecordsOnly,
-              child: Column(
-                children: [
-                  // Search Bar directly at the top of the screen content
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-                    child: TextField(
-                      controller: _searchController,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: _currentTabIndex == 3
-                            ? (_isAmharic
-                                  ? 'የመደብር ዕቃዎችን በስም ወይም በዝርዝር ፈልግ...'
-                                  : 'Search Store Inventory by name, item...')
-                            : _currentTabIndex == 2
-                            ? (_isAmharic
-                                  ? 'በስም ወይም በዕቃ ፈልግ...'
-                                  : 'Search by name or product...')
-                            : (_isAmharic
-                                  ? 'በስም ወይም በማስታወሻ ፈልግ...'
-                                  : 'Search $_currentTabLabel by name, item...'),
-                        hintStyle: TextStyle(
-                          fontSize: 11.5,
-                          color: isDark
-                              ? const Color(0xFF64748B)
-                              : const Color(0xFF94A3B8),
+                onRefresh: _reloadRecordsOnly,
+                child: Column(
+                  children: [
+                    // Search Bar directly at the top of the screen content
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+                      child: TextField(
+                        controller: _searchController,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: theme.colorScheme.onSurface,
                         ),
-                        prefixIcon: Icon(
-                          Icons.search,
-                          size: 16,
-                          color: isDark
-                              ? const Color(0xFF64748B)
-                              : const Color(0xFF94A3B8),
-                        ),
-                        suffixIcon: _searchQuery.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear, size: 14),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  setState(() => _searchQuery = '');
-                                },
-                              )
-                            : null,
-                        filled: true,
-                        fillColor: isDark
-                            ? const Color(0xFF1B2234)
-                            : Colors.white,
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 7,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
+                        decoration: InputDecoration(
+                          hintText: _currentTabIndex == 3
+                              ? (_isAmharic
+                                    ? 'የመደብር ዕቃዎችን በስም ወይም በዝርዝር ፈልግ...'
+                                    : 'Search Store Inventory by name, item...')
+                              : _currentTabIndex == 2
+                              ? (_isAmharic
+                                    ? 'በስም ወይም በዕቃ ፈልግ...'
+                                    : 'Search by name or product...')
+                              : (_isAmharic
+                                    ? 'በስም ወይም በማስታወሻ ፈልግ...'
+                                    : 'Search $_currentTabLabel by name, item...'),
+                          hintStyle: TextStyle(
+                            fontSize: 11.5,
                             color: isDark
-                                ? const Color(0xFF2E384D)
-                                : const Color(0xFFDAE2FD),
+                                ? const Color(0xFF64748B)
+                                : const Color(0xFF94A3B8),
+                          ),
+                          prefixIcon: Icon(
+                            Icons.search,
+                            size: 16,
+                            color: isDark
+                                ? const Color(0xFF64748B)
+                                : const Color(0xFF94A3B8),
+                          ),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 14),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() => _searchQuery = '');
+                                  },
+                                )
+                              : null,
+                          filled: true,
+                          fillColor: isDark
+                              ? const Color(0xFF1B2234)
+                              : Colors.white,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 7,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? const Color(0xFF2E384D)
+                                  : const Color(0xFFDAE2FD),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? const Color(0xFF2E384D)
+                                  : const Color(0xFFDAE2FD),
+                            ),
                           ),
                         ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: isDark
-                                ? const Color(0xFF2E384D)
-                                : const Color(0xFFDAE2FD),
-                          ),
-                        ),
+                        onChanged: (val) {
+                          setState(() => _searchQuery = val);
+                        },
                       ),
-                      onChanged: (val) {
-                        setState(() => _searchQuery = val);
-                      },
                     ),
-                  ),
 
-                  // Statement Summary Card (for Customer, Supplier, Delala, and Store)
-                  _buildStatementSummary(theme, isDark),
+                    // Statement Summary Card (for Customer, Supplier, Delala, and Store)
+                    _buildStatementSummary(theme, isDark),
 
-                  // Content view: Store Inventory on Hand for Stock; Excel Ledgers for Parties & Delala
-                  Expanded(
-                    child: _currentTabIndex == 3
-                        ? _buildStockInventorySheet(theme, isDark)
-                        : (records.isEmpty
-                              ? (_errorMessage != null
-                                    ? Center(
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(24.0),
+                    // Content view: Store Inventory on Hand for Stock; Excel Ledgers for Parties & Delala
+                    Expanded(
+                      child: _currentTabIndex == 3
+                          ? _buildStockInventorySheet(theme, isDark)
+                          : (records.isEmpty
+                                ? (_errorMessage != null
+                                      ? Center(
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(24.0),
+                                            child: Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                const Icon(
+                                                  Icons.cloud_off_rounded,
+                                                  size: 42,
+                                                  color: Color(0xFFBA1A1A),
+                                                ),
+                                                const SizedBox(height: 12),
+                                                const Text(
+                                                  'Online Connection Required',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 6),
+                                                Text(
+                                                  _errorMessage!,
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    color: isDark
+                                                        ? const Color(
+                                                            0xFF94A3B8,
+                                                          )
+                                                        : const Color(
+                                                            0xFF64748B,
+                                                          ),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 16),
+                                                ElevatedButton.icon(
+                                                  onPressed:
+                                                      _loadStoresAndRecords,
+                                                  style:
+                                                      ElevatedButton.styleFrom(
+                                                        backgroundColor:
+                                                            const Color(
+                                                              0xFF2563EB,
+                                                            ),
+                                                        foregroundColor:
+                                                            Colors.white,
+                                                      ),
+                                                  icon: const Icon(
+                                                    Icons.refresh,
+                                                    size: 16,
+                                                  ),
+                                                  label: const Text(
+                                                    'Retry Connection',
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        )
+                                      : Center(
                                           child: Column(
                                             mainAxisAlignment:
                                                 MainAxisAlignment.center,
                                             children: [
-                                              const Icon(
-                                                Icons.cloud_off_rounded,
-                                                size: 42,
-                                                color: Color(0xFFBA1A1A),
+                                              Icon(
+                                                Icons.table_chart_outlined,
+                                                size: 38,
+                                                color: Colors.grey.shade400,
                                               ),
-                                              const SizedBox(height: 12),
-                                              const Text(
-                                                'Online Connection Required',
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                _isAmharic
+                                                    ? 'ምንም $_currentTabLabel አልተገኘም'
+                                                    : 'No $_currentTabLabel entries found',
                                                 style: TextStyle(
                                                   fontWeight: FontWeight.bold,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 6),
-                                              Text(
-                                                _errorMessage!,
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  fontSize: 11.5,
+                                                  fontSize: 13.5,
                                                   color: isDark
                                                       ? const Color(0xFF94A3B8)
                                                       : const Color(0xFF64748B),
                                                 ),
                                               ),
-                                              const SizedBox(height: 16),
-                                              ElevatedButton.icon(
-                                                onPressed:
-                                                    _loadStoresAndRecords,
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: const Color(
-                                                    0xFF2563EB,
-                                                  ),
-                                                  foregroundColor: Colors.white,
-                                                ),
-                                                icon: const Icon(
-                                                  Icons.refresh,
-                                                  size: 16,
-                                                ),
-                                                label: const Text(
-                                                  'Retry Connection',
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                _isAmharic
+                                                    ? 'አዲስ መዝገብ ለማስገባት "+" ይጫኑ'
+                                                    : 'Tap "+" to add a new transaction entry',
+                                                style: const TextStyle(
+                                                  fontSize: 11.5,
+                                                  color: Color(0xFF94A3B8),
                                                 ),
                                               ),
                                             ],
                                           ),
-                                        ),
-                                      )
-                                    : Center(
-                                        child: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            Icon(
-                                              Icons.table_chart_outlined,
-                                              size: 38,
-                                              color: Colors.grey.shade400,
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              _isAmharic
-                                                  ? 'ምንም $_currentTabLabel አልተገኘም'
-                                                  : 'No $_currentTabLabel entries found',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 13.5,
-                                                color: isDark
-                                                    ? const Color(0xFF94A3B8)
-                                                    : const Color(0xFF64748B),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              _isAmharic
-                                                  ? 'አዲስ መዝገብ ለማስገባት "+" ይጫኑ'
-                                                  : 'Tap "+" to add a new transaction entry',
-                                              style: const TextStyle(
-                                                fontSize: 11.5,
-                                                color: Color(0xFF94A3B8),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ))
-                              : ListView.builder(
-                                  padding: const EdgeInsets.only(bottom: 75),
-                                  itemCount: records.length,
-                                  itemBuilder: (ctx, index) {
-                                    return _buildRecordTable(
-                                      records[index],
-                                      theme,
-                                      isDark,
-                                    );
-                                  },
-                                )),
-                  ),
-                ],
+                                        ))
+                                : ListView.builder(
+                                    padding: const EdgeInsets.only(bottom: 75),
+                                    itemCount: records.length,
+                                    itemBuilder: (ctx, index) {
+                                      return _buildRecordTable(
+                                        records[index],
+                                        theme,
+                                        isDark,
+                                      );
+                                    },
+                                  )),
+                    ),
+                  ],
+                ),
               ),
-            ),
       ),
 
       // Floating Add Transaction / Store Entry Button

@@ -27,6 +27,7 @@ class _EditProductDialogState extends State<EditProductDialog> {
 
   late TextEditingController _nameController;
   late TextEditingController _unitPriceController;
+  late TextEditingController _storekeeperPriceController;
   late TextEditingController _costPriceController;
   late TextEditingController _pcsPerCartonController;
   late TextEditingController _minStockController;
@@ -50,6 +51,10 @@ class _EditProductDialogState extends State<EditProductDialog> {
     _nameController = TextEditingController(text: p.productName);
     _unitPriceController = TextEditingController(
       text: p.unitPrice > 0 ? '${p.unitPrice}' : '',
+    );
+    final skp = p.storekeeperPrice > 0 ? p.storekeeperPrice : p.unitPrice;
+    _storekeeperPriceController = TextEditingController(
+      text: skp > 0 ? '$skp' : '',
     );
     _costPriceController = TextEditingController(
       text: p.costPrice > 0 ? '${p.costPrice}' : '',
@@ -93,6 +98,7 @@ class _EditProductDialogState extends State<EditProductDialog> {
   void dispose() {
     _nameController.dispose();
     _unitPriceController.dispose();
+    _storekeeperPriceController.dispose();
     _costPriceController.dispose();
     _pcsPerCartonController.dispose();
     _minStockController.dispose();
@@ -183,6 +189,7 @@ class _EditProductDialogState extends State<EditProductDialog> {
         productName: _nameController.text.trim(),
         unitPrice: _unitPrice,
         costPrice: double.tryParse(_costPriceController.text.trim()),
+        storekeeperPrice: double.tryParse(_storekeeperPriceController.text.trim()),
         pcsPerCarton: _piecesPerCarton,
         quantityCartons: _cartons,
         minimumStock: double.tryParse(_minStockController.text.trim()),
@@ -373,10 +380,10 @@ class _EditProductDialogState extends State<EditProductDialog> {
                   ),
                   const SizedBox(height: 12),
 
-                  // 3. Selling Price (Price per piece) & Cost Price (Admin only)
-                  if (isAdmin) ...[
-                    Row(
-                      children: [
+                  // 3. Selling Price (Price per piece) & Storekeeper Price
+                  Row(
+                    children: [
+                      if (isAdmin) ...[
                         Expanded(
                           child: TextFormField(
                             controller: _unitPriceController,
@@ -407,6 +414,30 @@ class _EditProductDialogState extends State<EditProductDialog> {
                           ),
                         ),
                         const SizedBox(width: 10),
+                      ],
+                      Expanded(
+                        child: TextFormField(
+                          controller: _storekeeperPriceController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: widget.isAmharic
+                                ? 'የመደብር ሠራተኛ ዋጋ'
+                                : 'Storekeeper Price',
+                            hintText: 'e.g. 60.00',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (isAdmin) ...[
+                        const SizedBox(width: 10),
                         Expanded(
                           child: TextFormField(
                             controller: _costPriceController,
@@ -428,9 +459,9 @@ class _EditProductDialogState extends State<EditProductDialog> {
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 12),
-                  ],
+                    ],
+                  ),
+                  const SizedBox(height: 12),
 
                   // 4. Live Automatic Calculations Box
                   Container(

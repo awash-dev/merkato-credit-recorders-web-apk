@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/user.dart';
 import '../models/store.dart';
 import '../services/api_service.dart';
@@ -102,6 +103,132 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     }
   }
 
+  Future<void> _deleteStore(Store store) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete Store'),
+        content: Text(
+          'Are you sure you want to delete "${store.name}"?\n\nAll inventory and transactions associated with this store will be permanently removed. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete Store'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await ApiService.deleteStore(store.id);
+      await _loadData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Deleted store "${store.name}"'),
+          backgroundColor: const Color(0xFF16A34A),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception:', '')),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showEditStoreDialog(Store store) async {
+    final nameCtrl = TextEditingController(text: store.name);
+    final codeCtrl = TextEditingController(text: store.code);
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Edit Store: ${store.name}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Store Name',
+                hintText: 'e.g. Merkato Store',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: codeCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Store Code (Optional)',
+                hintText: 'e.g. MERKATO-1',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              final newName = nameCtrl.text.trim();
+              if (newName.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Store name cannot be empty')),
+                );
+                return;
+              }
+              Navigator.pop(ctx);
+              try {
+                await ApiService.updateStore(
+                  store.id,
+                  name: newName,
+                  code: codeCtrl.text.trim().isNotEmpty ? codeCtrl.text.trim() : null,
+                );
+                await _loadData();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Updated store "$newName"'),
+                    backgroundColor: const Color(0xFF16A34A),
+                  ),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(e.toString().replaceAll('Exception:', '')),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child: const Text('Save Changes'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _createStorekeeper() async {
     final name = _userNameController.text.trim();
     final phone = _phoneController.text.trim();
@@ -131,6 +258,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         password: password,
         storeId: storeId,
       );
+      TextInput.finishAutofillContext(shouldSave: true);
       _userNameController.clear();
       _phoneController.clear();
       _passwordController.clear();
@@ -248,6 +376,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   const SizedBox(height: 10),
                   TextField(
                     controller: passCtrl,
+                    obscureText: true,
+                    autofillHints: const [AutofillHints.newPassword],
                     decoration: const InputDecoration(
                       labelText: 'Reset Password (optional)',
                       hintText: 'Leave empty to keep unchanged',
@@ -328,6 +458,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                             ),
                             children: [
                               _buildCreateStoreCard(),
+                              const SizedBox(height: 12),
+                              _buildStoresListCard(),
                               const SizedBox(height: 12),
                               _buildCreateUserCard(),
                               const SizedBox(height: 18),
@@ -433,6 +565,152 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     );
   }
 
+  Widget _buildStoresListCard() {
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Existing Stores (${_stores.length})',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${_stores.length} stores',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF2563EB),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (_stores.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Center(
+                  child: Text(
+                    'No stores created yet. Create your first store above.',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                  ),
+                ),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _stores.length,
+                separatorBuilder: (_, _) => Divider(height: 1, color: Colors.grey.shade200),
+                itemBuilder: (context, index) {
+                  final store = _stores[index];
+                  final assignedUsers = _users.where((u) => u.storeId == store.id).toList();
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: const Color(0xFFEFF6FF),
+                          child: const Icon(
+                            Icons.storefront_rounded,
+                            size: 18,
+                            color: Color(0xFF2563EB),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                store.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13.5,
+                                  color: Color(0xFF0F172A),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  if (store.code.isNotEmpty) ...[
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade100,
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: Colors.grey.shade300),
+                                      ),
+                                      child: Text(
+                                        store.code,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.grey.shade700,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  Text(
+                                    assignedUsers.isEmpty
+                                        ? 'No storekeepers'
+                                        : '${assignedUsers.length} storekeeper${assignedUsers.length > 1 ? 's' : ''}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: assignedUsers.isEmpty
+                                          ? Colors.grey.shade500
+                                          : const Color(0xFF16A34A),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Edit Store Button
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 19, color: Color(0xFF2563EB)),
+                          tooltip: 'Edit Store',
+                          onPressed: () => _showEditStoreDialog(store),
+                        ),
+                        // Delete Store Button
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, size: 19, color: Color(0xFFDC2626)),
+                          tooltip: 'Delete Store',
+                          onPressed: () => _deleteStore(store),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCreateUserCard() {
     return Card(
       elevation: 0,
@@ -451,31 +729,47 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
-            TextField(
-              controller: _userNameController,
-              decoration: const InputDecoration(
-                labelText: 'Full name',
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _phoneController,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Phone number',
-                hintText: '0911111111',
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Password',
-                hintText: 'At least 6 characters',
-                isDense: true,
+            AutofillGroup(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: _userNameController,
+                    autofillHints: const [AutofillHints.name],
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'Full name',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    autofillHints: const [
+                      AutofillHints.telephoneNumber,
+                      AutofillHints.username,
+                    ],
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'Phone number',
+                      hintText: '0911111111',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    autofillHints: const [AutofillHints.newPassword],
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(
+                      labelText: 'Password',
+                      hintText: 'At least 6 characters',
+                      isDense: true,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 10),

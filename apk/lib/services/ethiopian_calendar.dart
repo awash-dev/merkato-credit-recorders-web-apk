@@ -154,5 +154,53 @@ class EthiopianCalendar {
         : (eth.month <= 13 ? monthsEn[eth.month] : 'Month ${eth.month}');
     return '$monthName ${eth.day}, ${eth.year}';
   }
+
+  /// Returns current date in authentic Ethiopian calendar
+  static EthiopianDate now() {
+    final dt = DateTime.now();
+    return toEthiopian(dt.year, dt.month, dt.day);
+  }
+
+  /// Formats current date in Ethiopian calendar
+  static String nowDisplay({String lang = 'am'}) {
+    return formatDisplay(now(), lang: lang);
+  }
+
+  /// Converts any Gregorian or ISO date string into an authentic Ethiopian date string
+  static String formatAnyDate(String rawDate, {String lang = 'am'}) {
+    if (rawDate.trim().isEmpty) return '';
+    try {
+      for (final m in monthsAm) {
+        if (m.isNotEmpty && rawDate.contains(m)) return rawDate;
+      }
+      for (final m in monthsEn) {
+        if (m.isNotEmpty && rawDate.contains(m)) return rawDate;
+      }
+
+      final parts = rawDate.split(RegExp(r'[-/]'));
+      if (parts.length == 3) {
+        final p0 = int.tryParse(parts[0]);
+        final p1 = int.tryParse(parts[1]);
+        final p2 = int.tryParse(parts[2]);
+        if (p0 != null && p1 != null && p2 != null) {
+          if (p0 > 1900 && p0 <= 2100) {
+            final eth = toEthiopian(p0, p1, p2);
+            return formatDisplay(eth, lang: lang);
+          }
+          if (p2 > 1900 && p2 <= 2100) {
+            final eth = toEthiopian(p2, p1, p0);
+            return formatDisplay(eth, lang: lang);
+          }
+        }
+      }
+
+      final dt = DateTime.tryParse(rawDate);
+      if (dt != null) {
+        final eth = toEthiopian(dt.year, dt.month, dt.day);
+        return formatDisplay(eth, lang: lang);
+      }
+    } catch (_) {}
+    return rawDate;
+  }
 }
 

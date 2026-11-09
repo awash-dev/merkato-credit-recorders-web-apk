@@ -29,6 +29,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
 
   final _nameController = TextEditingController();
   final _unitPriceController = TextEditingController();
+  final _storekeeperPriceController = TextEditingController();
   final _pcsPerCartonController = TextEditingController(text: '1');
   final _openingCartonsController = TextEditingController(text: '0');
   final _minStockController = TextEditingController(text: '0');
@@ -61,6 +62,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
     _autocompleteTimer?.cancel();
     _nameController.dispose();
     _unitPriceController.dispose();
+    _storekeeperPriceController.dispose();
     _pcsPerCartonController.dispose();
     _openingCartonsController.dispose();
     _minStockController.dispose();
@@ -134,10 +136,16 @@ class _NewProductDialogState extends State<NewProductDialog> {
     final minStock = product.minimumStock % 1 == 0
         ? product.minimumStock.toInt().toString()
         : product.minimumStock.toString();
+    final skPrice = product.storekeeperPrice > 0
+        ? (product.storekeeperPrice % 1 == 0
+            ? product.storekeeperPrice.toInt().toString()
+            : product.storekeeperPrice.toString())
+        : price;
 
     _nameController.text = product.productName;
     _pcsPerCartonController.text = pcs;
     _unitPriceController.text = price;
+    _storekeeperPriceController.text = skPrice;
     _minStockController.text = minStock;
     _openingCartonsController.text = '0';
     setState(() => _suggestions = []);
@@ -161,6 +169,11 @@ class _NewProductDialogState extends State<NewProductDialog> {
                       ? fresh.costPrice.toInt().toString()
                       : fresh.costPrice.toString())
                   : '');
+          final freshSk = fresh.storekeeperPrice > 0
+              ? (fresh.storekeeperPrice % 1 == 0
+                  ? fresh.storekeeperPrice.toInt().toString()
+                  : fresh.storekeeperPrice.toString())
+              : freshPrice;
           final freshMin = fresh.minimumStock % 1 == 0
               ? fresh.minimumStock.toInt().toString()
               : fresh.minimumStock.toString();
@@ -169,6 +182,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
             _nameController.text = fresh.productName;
             _pcsPerCartonController.text = freshPcs;
             _unitPriceController.text = freshPrice;
+            _storekeeperPriceController.text = freshSk;
             _minStockController.text = freshMin;
           });
         }
@@ -242,9 +256,11 @@ class _NewProductDialogState extends State<NewProductDialog> {
         );
       }
 
+      final skPrice = double.tryParse(_storekeeperPriceController.text.trim()) ?? _unitPrice;
       final product = await ApiService.registerProduct(
         productName: name,
         unitPrice: _unitPrice,
+        storekeeperPrice: skPrice,
         pcsPerCarton: _pcsPerCarton,
         openingCartons: _openingCartons,
         openingLoosePieces: 0,
@@ -593,6 +609,28 @@ class _NewProductDialogState extends State<NewProductDialog> {
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Storekeeper Price (Single piece price)
+                  TextFormField(
+                    controller: _storekeeperPriceController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: widget.isAmharic
+                          ? 'የመደብር ሠራተኛ ዋጋ (ነጠላ ፍሬ)'
+                          : 'Storekeeper Price (Single Piece ETB)',
+                      hintText: widget.isAmharic ? 'የነጠላ ፍሬ ዋጋ' : 'e.g. 60.00',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 12),
 
