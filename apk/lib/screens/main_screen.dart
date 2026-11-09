@@ -595,6 +595,7 @@ class _MainScreenState extends State<MainScreen> {
     required String mainValue,
     required String subtitle,
     String? currencyPrefix,
+    Color? valueColor,
   }) {
     final textColor = isDark ? Colors.white : Colors.black;
     final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569);
@@ -645,7 +646,9 @@ class _MainScreenState extends State<MainScreen> {
                     style: TextStyle(
                       fontSize: 9.5,
                       fontWeight: FontWeight.w700,
-                      color: subColor,
+                      color: valueColor != null
+                          ? valueColor.withValues(alpha: 0.8)
+                          : subColor,
                     ),
                   ),
                   const SizedBox(width: 2.5),
@@ -657,7 +660,7 @@ class _MainScreenState extends State<MainScreen> {
                     fontWeight: FontWeight.w900,
                     fontFamily: 'monospace',
                     letterSpacing: -0.3,
-                    color: textColor,
+                    color: valueColor ?? textColor,
                   ),
                 ),
               ],
@@ -695,22 +698,24 @@ class _MainScreenState extends State<MainScreen> {
       }
       final netBalance = totalDebit - totalCredit;
 
-      // Card 1: Invoiced
+      // Card 1: Invoiced (Outcome -> Red)
       card1 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ሽያጭ' : 'Invoiced',
+        title: _isAmharic ? 'ኢንቮይስ' : 'Invoiced',
         mainValue: _currencyFormat.format(totalDebit),
         currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
         subtitle: _isAmharic ? 'ዴቢት' : 'Debit',
+        valueColor: const Color(0xFFDC2626),
       );
 
-      // Card 2: Received
+      // Card 2: Received (Income -> Green)
       card2 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ክፍያ' : 'Received',
+        title: _isAmharic ? 'የተከፈለ' : 'Received',
         mainValue: _currencyFormat.format(totalCredit),
         currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
         subtitle: _isAmharic ? 'ክሬዲት' : 'Credit',
+        valueColor: const Color(0xFF16A34A),
       );
 
       // Card 3: Balance
@@ -726,6 +731,9 @@ class _MainScreenState extends State<MainScreen> {
             : (isOverpaid
                 ? (_isAmharic ? 'ትርፍ' : 'Overpaid')
                 : (_isAmharic ? 'ተወራርዷል' : 'Settled')),
+        valueColor: isReceivable
+            ? const Color(0xFFDC2626)
+            : const Color(0xFF16A34A),
       );
     } else if (_currentTabType == 'supplier') {
       final records = _filteredRecords;
@@ -737,30 +745,32 @@ class _MainScreenState extends State<MainScreen> {
       }
       final netBalance = totalDebit - totalCredit;
 
-      // Card 1: Purchased
+      // Card 1: Invoiced (Outcome -> Red)
       card1 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ግዢ' : 'Purchased',
+        title: _isAmharic ? 'ኢንቮይስ' : 'Invoiced',
         mainValue: _currencyFormat.format(totalDebit),
         currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
         subtitle: _isAmharic ? 'ዴቢት' : 'Debit',
+        valueColor: const Color(0xFFDC2626),
       );
 
-      // Card 2: Paid
+      // Card 2: Received (Income -> Green)
       card2 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ክፍያ' : 'Paid',
+        title: _isAmharic ? 'የተከፈለ' : 'Received',
         mainValue: _currencyFormat.format(totalCredit),
         currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
         subtitle: _isAmharic ? 'ክሬዲት' : 'Credit',
+        valueColor: const Color(0xFF16A34A),
       );
 
-      // Card 3: Payables / Balance
+      // Card 3: Balance
       final isPayable = netBalance > 0;
       final isAdvance = netBalance < 0;
       card3 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ዕዳ' : 'Payables',
+        title: _isAmharic ? 'ቀሪ' : 'Balance',
         mainValue: _currencyFormat.format(netBalance.abs()),
         currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
         subtitle: isPayable
@@ -768,17 +778,17 @@ class _MainScreenState extends State<MainScreen> {
             : (isAdvance
                 ? (_isAmharic ? 'ቅድመ' : 'Advance')
                 : (_isAmharic ? 'ተወራርዷል' : 'Settled')),
+        valueColor: isPayable
+            ? const Color(0xFFDC2626)
+            : const Color(0xFF16A34A),
       );
     } else if (_currentTabType == 'delala') {
       final records = _filteredRecords;
-      double totalBorrowedPcs = 0;
-      double totalReturnedPcs = 0;
       double totalBorrowedPrice = 0;
       double totalSettledPrice = 0;
       for (final r in records) {
         for (final it in r.items) {
           if (it.sign == '+') {
-            totalBorrowedPcs += it.quantity;
             totalBorrowedPrice += it.subtotal;
           } else {
             final isItemReturn = it.packagingUnit != 'Payment' &&
@@ -786,7 +796,6 @@ class _MainScreenState extends State<MainScreen> {
                     (it.quantity > 0 &&
                         it.name.trim().toLowerCase() != 'payment'));
             if (isItemReturn) {
-              totalReturnedPcs += it.quantity;
               totalSettledPrice += it.subtotal;
             } else {
               totalSettledPrice += it.subtotal;
@@ -794,37 +803,44 @@ class _MainScreenState extends State<MainScreen> {
           }
         }
       }
-      final remainingPcs = totalBorrowedPcs - totalReturnedPcs;
       final netBalance = totalBorrowedPrice - totalSettledPrice;
 
-      // Card 1: Borrowed
+      // Card 1: Invoiced (Borrowed goods / Outcome -> Red)
       card1 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ውሰት' : 'Borrowed',
-        mainValue: '${totalBorrowedPcs.toInt()} ${_isAmharic ? "ፍሬ" : "pcs"}',
-        subtitle:
-            '${_currencyFormat.format(totalBorrowedPrice)} ${_isAmharic ? "ብር" : "ETB"}',
+        title: _isAmharic ? 'ኢንቮይስ' : 'Invoiced',
+        mainValue: _currencyFormat.format(totalBorrowedPrice),
+        currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
+        subtitle: _isAmharic ? 'ዴቢት' : 'Debit',
+        valueColor: const Color(0xFFDC2626),
       );
 
-      // Card 2: Items / Remaining
+      // Card 2: Received (Settled / Payments / Income -> Green)
       card2 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ዕቃዎች' : 'Items',
-        mainValue: '${remainingPcs.toInt()} ${_isAmharic ? "ፍሬ" : "pcs"}',
-        subtitle: '-${totalReturnedPcs.toInt()} ${_isAmharic ? "መልስ" : "Ret"}',
+        title: _isAmharic ? 'የተከፈለ' : 'Received',
+        mainValue: _currencyFormat.format(totalSettledPrice),
+        currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
+        subtitle: _isAmharic ? 'ክሬዲት' : 'Credit',
+        valueColor: const Color(0xFF16A34A),
       );
 
       // Card 3: Balance
+      final isReceivable = netBalance > 0;
+      final isPayable = netBalance < 0;
       card3 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ሂሳብ' : 'Balance',
+        title: _isAmharic ? 'ቀሪ' : 'Balance',
         mainValue: _currencyFormat.format(netBalance.abs()),
         currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
-        subtitle: netBalance > 0
+        subtitle: isReceivable
             ? (_isAmharic ? 'ተሰብሳቢ' : 'Receivable')
-            : (netBalance < 0
+            : (isPayable
                 ? (_isAmharic ? 'ተከፋይ' : 'Payable')
                 : (_isAmharic ? 'ተወራርዷል' : 'Settled')),
+        valueColor: isReceivable
+            ? const Color(0xFFDC2626)
+            : const Color(0xFF16A34A),
       );
     } else {
       // Store / Stock
@@ -1853,24 +1869,24 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
 
-            // Card Footer: Action buttons matching Customer / Supplier table style
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFF242C40)
-                    : const Color(0xFFE2E8F0),
-                borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(7),
+            // Card Footer: Action buttons (Storekeeper only; Admin is View Mode Only)
+            if (!widget.currentUser.isAdmin)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF242C40)
+                      : const Color(0xFFE2E8F0),
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(7),
+                  ),
+                  border: Border(
+                    top: BorderSide(color: gridBorderColor, width: 1.2),
+                  ),
                 ),
-                border: Border(
-                  top: BorderSide(color: gridBorderColor, width: 1.2),
-                ),
-              ),
-              child: Row(
-                children: [
-                  // Edit Product button (Storekeeper only; Admin is View Mode Only)
-                  if (!widget.currentUser.isAdmin) ...[
+                child: Row(
+                  children: [
+                    // Edit Product button (Storekeeper only)
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () => _openEditProductDialog(prod),
@@ -1899,10 +1915,8 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                  ],
 
-                  // Stock In/Out button (Storekeeper only)
-                  if (!widget.currentUser.isAdmin) ...[
+                    // Stock In/Out button (Storekeeper only)
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () => _openStockTransactionDialog(prod),
@@ -1931,39 +1945,38 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                  ],
 
-                  // History button (Both Admin and Storekeeper can view history)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _openProductHistoryDialog(prod),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: isDark
-                            ? Colors.white
-                            : const Color(0xFF1E293B),
-                        side: BorderSide(color: gridBorderColor),
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 6,
-                          horizontal: 4,
+                    // History button (Storekeeper only)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _openProductHistoryDialog(prod),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: isDark
+                              ? Colors.white
+                              : const Color(0xFF1E293B),
+                          side: BorderSide(color: gridBorderColor),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 6,
+                            horizontal: 4,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
+                        icon: const Icon(Icons.history, size: 14),
+                        label: Text(
+                          _isAmharic ? 'ታሪክ' : 'History',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      icon: const Icon(Icons.history, size: 14),
-                      label: Text(
-                        _isAmharic ? 'ታሪክ' : 'History',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
           ],
         ],
       ),
@@ -2065,32 +2078,76 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                   const SizedBox(width: 6),
 
-                  // Price side with reduced Birr / ETB text size
-                  RichText(
-                    textAlign: TextAlign.end,
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: _isAmharic ? 'ብር ' : 'ETB ',
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? const Color(0xFF94A3B8)
-                                : const Color(0xFF64748B),
+                  // Price side with pcs underneath (Image 2) and red/green text colors
+                  Builder(
+                    builder: (context) {
+                      final totalRecordPcs = rec.items.fold<double>(0.0, (sum, item) {
+                        double pcs = 0;
+                        if (item.cartons != null && item.cartons! > 0 && item.pcsPerCarton != null && item.pcsPerCarton! > 0) {
+                          pcs = item.cartons! * item.pcsPerCarton!;
+                        } else if (item.packagingUnit != 'Payment' && item.quantity > 0) {
+                          pcs = item.quantity;
+                        }
+                        if (item.sign == '+') {
+                          return sum + pcs;
+                        } else {
+                          final isItemReturn = item.packagingUnit != 'Payment' &&
+                              (item.customType == 'Item Return' ||
+                                  item.customType == 'Return' ||
+                                  (item.bank == null && item.quantity > 0 && !item.name.toLowerCase().startsWith('payment')));
+                          if (isItemReturn) {
+                            return sum - pcs;
+                          }
+                          return sum;
+                        }
+                      });
+
+                      final balanceColor = rec.balance > 0
+                          ? const Color(0xFFDC2626)
+                          : const Color(0xFF16A34A);
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          RichText(
+                            textAlign: TextAlign.end,
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: _isAmharic ? 'ብር ' : 'ETB ',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: balanceColor,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: _currencyFormat.format(rec.balance),
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w900,
+                                    fontFamily: 'monospace',
+                                    color: balanceColor,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        TextSpan(
-                          text: _currencyFormat.format(rec.balance),
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
-                            fontFamily: 'monospace',
-                            color: theme.colorScheme.onSurface,
+                          const SizedBox(height: 1),
+                          Text(
+                            '${totalRecordPcs.abs().toInt()} ${_isAmharic ? "ፍሬ" : "pcs"}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF64748B),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      );
+                    },
                   ),
 
                   // Eye icon (on straight level)
@@ -2489,7 +2546,9 @@ class _MainScreenState extends State<MainScreen> {
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700,
                                     fontFamily: 'monospace',
-                                    color: theme.colorScheme.onSurface,
+                                    color: item.sign == '-'
+                                        ? const Color(0xFF16A34A)
+                                        : const Color(0xFFDC2626),
                                   ),
                                 ),
                               ),
@@ -2518,7 +2577,9 @@ class _MainScreenState extends State<MainScreen> {
                                     fontSize: 11.5,
                                     fontWeight: FontWeight.w800,
                                     fontFamily: 'monospace',
-                                    color: theme.colorScheme.onSurface,
+                                    color: item.sign == '-'
+                                        ? const Color(0xFF16A34A)
+                                        : const Color(0xFFDC2626),
                                   ),
                                 ),
                               ),
@@ -2557,7 +2618,9 @@ class _MainScreenState extends State<MainScreen> {
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
                               fontFamily: 'monospace',
-                              color: theme.colorScheme.onSurface,
+                              color: rec.balance > 0
+                                  ? const Color(0xFFDC2626)
+                                  : const Color(0xFF16A34A),
                             ),
                           ),
                         ],
@@ -2610,21 +2673,19 @@ class _MainScreenState extends State<MainScreen> {
                           children: [
                             TextSpan(
                               text: _isAmharic ? 'ብር ' : 'ETB ',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 9,
                                 fontWeight: FontWeight.w600,
-                                color: isDark
-                                    ? const Color(0xFF94A3B8)
-                                    : const Color(0xFF64748B),
+                                color: Color(0xFFDC2626),
                               ),
                             ),
                             TextSpan(
                               text: _currencyFormat.format(rec.totalDebit),
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontWeight: FontWeight.w900,
                                 fontSize: 11.5,
                                 fontFamily: 'monospace',
-                                color: theme.colorScheme.onSurface,
+                                color: Color(0xFFDC2626),
                               ),
                             ),
                           ],
@@ -2661,21 +2722,19 @@ class _MainScreenState extends State<MainScreen> {
                           children: [
                             TextSpan(
                               text: _isAmharic ? 'ብር ' : 'ETB ',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 9,
                                 fontWeight: FontWeight.w600,
-                                color: isDark
-                                    ? const Color(0xFF94A3B8)
-                                    : const Color(0xFF64748B),
+                                color: Color(0xFF16A34A),
                               ),
                             ),
                             TextSpan(
                               text: _currencyFormat.format(rec.totalCredit),
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontWeight: FontWeight.w900,
                                 fontSize: 11.5,
                                 fontFamily: 'monospace',
-                                color: theme.colorScheme.onSurface,
+                                color: Color(0xFF16A34A),
                               ),
                             ),
                           ],
@@ -2704,9 +2763,9 @@ class _MainScreenState extends State<MainScreen> {
                               style: TextStyle(
                                 fontSize: 9.5,
                                 fontWeight: FontWeight.w600,
-                                color: isDark
-                                    ? const Color(0xFF94A3B8)
-                                    : const Color(0xFF64748B),
+                                color: rec.balance > 0
+                                    ? const Color(0xFFDC2626)
+                                    : const Color(0xFF16A34A),
                               ),
                             ),
                             TextSpan(
@@ -2715,7 +2774,9 @@ class _MainScreenState extends State<MainScreen> {
                                 fontWeight: FontWeight.w900,
                                 fontSize: 13,
                                 fontFamily: 'monospace',
-                                color: theme.colorScheme.onSurface,
+                                color: rec.balance > 0
+                                    ? const Color(0xFFDC2626)
+                                    : const Color(0xFF16A34A),
                               ),
                             ),
                           ],

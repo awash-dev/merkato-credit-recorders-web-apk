@@ -694,7 +694,7 @@ class _StatementScreenState extends State<StatementScreen> {
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w700,
                                 color: entry.debit > 0
-                                    ? theme.colorScheme.onSurface
+                                    ? const Color(0xFFDC2626)
                                     : (isDark
                                           ? Colors.grey.shade700
                                           : Colors.grey.shade400),
@@ -737,7 +737,7 @@ class _StatementScreenState extends State<StatementScreen> {
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w900,
                                   color: entry.credit > 0
-                                      ? theme.colorScheme.onSurface
+                                      ? const Color(0xFF16A34A)
                                       : (isDark
                                             ? Colors.grey.shade700
                                             : Colors.grey.shade400),
@@ -765,7 +765,11 @@ class _StatementScreenState extends State<StatementScreen> {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: theme.colorScheme.onSurface,
+                                color: entry.balance > 0
+                                    ? const Color(0xFFDC2626)
+                                    : (entry.balance < 0
+                                        ? const Color(0xFF16A34A)
+                                        : theme.colorScheme.onSurface),
                               ),
                             ),
                           ),
@@ -833,6 +837,7 @@ class _StatementScreenState extends State<StatementScreen> {
                           style: const TextStyle(
                             fontWeight: FontWeight.w900,
                             fontSize: 11,
+                            color: Color(0xFFDC2626),
                           ),
                         ),
                       ),
@@ -852,10 +857,10 @@ class _StatementScreenState extends State<StatementScreen> {
                         alignment: Alignment.centerRight,
                         child: Text(
                           _currencyFormat.format(st.totals.totalCredit),
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontWeight: FontWeight.w900,
                             fontSize: 11,
-                            color: theme.colorScheme.onSurface,
+                            color: Color(0xFF16A34A),
                           ),
                         ),
                       ),
@@ -873,7 +878,9 @@ class _StatementScreenState extends State<StatementScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w900,
                             fontSize: 11.5,
-                            color: theme.colorScheme.onSurface,
+                            color: st.totals.outstanding > 0
+                                ? const Color(0xFFDC2626)
+                                : const Color(0xFF16A34A),
                           ),
                         ),
                       ),
@@ -919,10 +926,10 @@ class _StatementScreenState extends State<StatementScreen> {
               ),
               Text(
                 'ETB ${_currencyFormat.format(st.totals.totalDebit)}',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onSurface,
+                  color: Color(0xFFDC2626),
                 ),
               ),
             ],
@@ -946,10 +953,10 @@ class _StatementScreenState extends State<StatementScreen> {
               ),
               Text(
                 'ETB ${_currencyFormat.format(st.totals.totalCredit)}',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onSurface,
+                  color: Color(0xFF16A34A),
                 ),
               ),
             ],
@@ -975,7 +982,9 @@ class _StatementScreenState extends State<StatementScreen> {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
-                  color: theme.colorScheme.onSurface,
+                  color: st.totals.outstanding > 0
+                      ? const Color(0xFFDC2626)
+                      : const Color(0xFF16A34A),
                 ),
               ),
             ],
