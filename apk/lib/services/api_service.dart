@@ -322,7 +322,7 @@ class ApiService {
     return '';
   }
 
-  /* ------------------- Storekeeper Admin Management (Online Neon) ------------------- */
+  /* ------------------- User & Sales Admin Management (Online Neon) ------------------- */
   static Future<List<AppUser>> getStorekeepers() async {
     return NeonDatabaseService.getUsersDirect();
   }
@@ -333,6 +333,8 @@ class ApiService {
     String? email,
     required String password,
     required String storeId,
+    String role = 'storekeeper',
+    List<String>? assignedStores,
   }) async {
     return await NeonDatabaseService.createStorekeeperDirect(
       name: name,
@@ -340,6 +342,28 @@ class ApiService {
       email: email,
       password: password,
       storeId: storeId,
+      role: role,
+      assignedStores: assignedStores,
+    );
+  }
+
+  static Future<AppUser> createUser({
+    required String name,
+    required String phone,
+    String? email,
+    required String password,
+    required String storeId,
+    String role = 'sales',
+    List<String>? assignedStores,
+  }) async {
+    return await NeonDatabaseService.createUserDirect(
+      name: name,
+      phone: phone,
+      email: email,
+      password: password,
+      storeId: storeId,
+      role: role,
+      assignedStores: assignedStores,
     );
   }
 
@@ -350,7 +374,9 @@ class ApiService {
     String? email,
     String? password,
     String? storeId,
+    List<String>? assignedStores,
     bool? active,
+    String? role,
   }) async {
     return await NeonDatabaseService.updateStorekeeperDirect(
       userId,
@@ -358,7 +384,9 @@ class ApiService {
       phone: phone,
       password: password,
       storeId: storeId,
+      assignedStores: assignedStores,
       active: active,
+      role: role,
     );
   }
 

@@ -83,9 +83,12 @@ class _NewProductDialogState extends State<NewProductDialog> {
     }
     _autocompleteTimer = Timer(const Duration(milliseconds: 300), () async {
       try {
-        final storeId = widget.currentUser.isStorekeeper
-            ? (widget.currentUser.storeId ?? widget.activeStoreId)
-            : (widget.activeStoreId == 'all' ? null : widget.activeStoreId);
+        final storeId = (widget.activeStoreId != null &&
+                widget.activeStoreId!.isNotEmpty &&
+                widget.activeStoreId != 'all')
+            ? widget.activeStoreId
+            : (widget.currentUser.storeId ??
+                (widget.activeStoreId == 'all' ? null : widget.activeStoreId));
         final products = await ApiService.getInventoryProducts(
           storeId: storeId,
         );
@@ -238,9 +241,12 @@ class _NewProductDialogState extends State<NewProductDialog> {
       );
       return;
     }
-    final targetStoreId = widget.currentUser.isStorekeeper
-        ? (widget.currentUser.storeId ?? widget.activeStoreId)
-        : (widget.activeStoreId == 'all' ? null : widget.activeStoreId);
+    final targetStoreId = (widget.activeStoreId != null &&
+            widget.activeStoreId!.isNotEmpty &&
+            widget.activeStoreId != 'all')
+        ? widget.activeStoreId
+        : (widget.currentUser.storeId ??
+            (widget.activeStoreId == 'all' ? null : widget.activeStoreId));
 
     setState(() {
       _isSaving = true;
@@ -248,13 +254,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
     });
 
     try {
-      // Duplicate check
-      final exists = await ApiService.checkProductExists(name, targetStoreId);
-      if (exists && mounted) {
-        throw Exception(
-          widget.isAmharic ? 'ይህ ምርት ቀድሞ ተመዝግቧል። ከዝርዝሩ ይምረጡ ወይም ስሙን ያርሙ።' : 'This product already exists. Select it from suggestions or edit its saved details.',
-        );
-      }
+      // If product with same name exists, registerProduct merges and updates seamlessly (Fix duplicate same names)
 
       final skPrice = double.tryParse(_storekeeperPriceController.text.trim()) ?? _unitPrice;
       final product = await ApiService.registerProduct(

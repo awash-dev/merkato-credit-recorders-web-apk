@@ -22,6 +22,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   String? _selectedStoreId;
+  String _selectedRole = 'sales';
   bool _isCreatingStore = false;
   bool _isCreatingUser = false;
 
@@ -252,11 +253,13 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
 
     setState(() => _isCreatingUser = true);
     try {
-      await ApiService.createStorekeeper(
+      await ApiService.createUser(
         name: name,
         phone: phone,
         password: password,
         storeId: storeId,
+        role: _selectedRole,
+        assignedStores: [storeId],
       );
       TextInput.finishAutofillContext(shouldSave: true);
       _userNameController.clear();
@@ -265,7 +268,12 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       await _loadData();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Created storekeeper account for $name')),
+        SnackBar(
+          content: Text(
+            'Created ${_selectedRole == "sales" ? "Sales" : "Storekeeper"} account for $name',
+          ),
+          backgroundColor: const Color(0xFF16A34A),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -325,6 +333,11 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     String selectedStoreId = (user.storeId != null && storeIds.contains(user.storeId))
         ? user.storeId!
         : (_stores.isNotEmpty ? _stores.first.id : '');
+    final initialAssigned = user.assignedStoreIds.isNotEmpty
+        ? List<String>.from(user.assignedStoreIds)
+        : (user.storeId != null && user.storeId!.isNotEmpty ? [user.storeId!] : <String>[]);
+    List<String> assignedStores = List<String>.from(initialAssigned);
+    String role = user.role;
     bool active = user.active;
 
     await showDialog(
@@ -352,17 +365,85 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
+                    initialValue: role,
+                    decoration: const InputDecoration(labelText: 'Account Role'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'sales',
+                        child: Text('Sales (የሽያጭ ሠራተኛ)'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'storekeeper',
+                        child: Text('Storekeeper (የመጋዘን ኃላፊ)'),
+                      ),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDlgState(() => role = val);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
                     initialValue: selectedStoreId.isEmpty ? null : selectedStoreId,
-                    decoration: const InputDecoration(labelText: 'Assigned Store'),
+                    decoration: const InputDecoration(labelText: 'Primary Store (ዋና መደብር)'),
                     items: [
                       for (final store in _stores)
                         DropdownMenuItem(value: store.id, child: Text(store.name)),
                     ],
                     onChanged: (val) {
                       if (val != null) {
-                        setDlgState(() => selectedStoreId = val);
+                        setDlgState(() {
+                          selectedStoreId = val;
+                          if (!assignedStores.contains(val)) {
+                            assignedStores.add(val);
+                          }
+                        });
                       }
                     },
+                  ),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Accessible Stores (የሚፈቀዱ መደብሮች):',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      for (final store in _stores)
+                        FilterChip(
+                          label: Text(store.name, style: const TextStyle(fontSize: 11.5)),
+                          selected: assignedStores.contains(store.id),
+                          selectedColor: const Color(0xFFDBEAFE),
+                          checkmarkColor: const Color(0xFF1D4ED8),
+                          onSelected: (selected) {
+                            setDlgState(() {
+                              if (selected) {
+                                if (!assignedStores.contains(store.id)) {
+                                  assignedStores.add(store.id);
+                                }
+                              } else {
+                                if (assignedStores.length > 1) {
+                                  assignedStores.remove(store.id);
+                                }
+                              }
+                              if (!assignedStores.contains(selectedStoreId) &&
+                                  assignedStores.isNotEmpty) {
+                                selectedStoreId = assignedStores.first;
+                              }
+                            });
+                          },
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   SwitchListTile(
@@ -404,8 +485,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                       name: nameCtrl.text.trim(),
                       phone: phoneCtrl.text.trim(),
                       storeId: selectedStoreId.isEmpty ? null : selectedStoreId,
+                      assignedStores: assignedStores,
                       active: active,
                       password: passCtrl.text.isNotEmpty ? passCtrl.text : null,
+                      role: role,
                     );
                     _fetchUsers();
                     if (!mounted) return;
@@ -433,7 +516,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F9ED),
       appBar: AppBar(
-        title: const Text('Storekeeper Accounts'),
+        title: const Text('User & Sales Accounts'),
         backgroundColor: Colors.white,
         elevation: 0.5,
         foregroundColor: const Color(0xFF0F172A),
@@ -725,8 +808,29 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Create Storekeeper',
+              'Create User / Sales Account',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedRole,
+              decoration: const InputDecoration(
+                labelText: 'Account Role (የአካውንት ዓይነት)',
+                isDense: true,
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'sales',
+                  child: Text('Sales (የሽያጭ ሠራተኛ)'),
+                ),
+                DropdownMenuItem(
+                  value: 'storekeeper',
+                  child: Text('Storekeeper (የመጋዘን ኃላፊ)'),
+                ),
+              ],
+              onChanged: (val) {
+                if (val != null) setState(() => _selectedRole = val);
+              },
             ),
             const SizedBox(height: 10),
             AutofillGroup(
@@ -831,12 +935,20 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
             CircleAvatar(
               radius: 20,
               backgroundColor: user.active
-                  ? const Color(0xFFEFF6FF)
+                  ? (user.isSales
+                      ? const Color(0xFFDCFCE7)
+                      : const Color(0xFFEFF6FF))
                   : const Color(0xFFF1F5F9),
               child: Icon(
-                Icons.storefront_outlined,
+                user.isSales
+                    ? Icons.point_of_sale_outlined
+                    : Icons.storefront_outlined,
                 size: 20,
-                color: user.active ? const Color(0xFF2563EB) : Colors.grey,
+                color: user.active
+                    ? (user.isSales
+                        ? const Color(0xFF16A34A)
+                        : const Color(0xFF2563EB))
+                    : Colors.grey,
               ),
             ),
             const SizedBox(width: 10),
@@ -844,15 +956,50 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    user.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      decoration: user.active ? null : TextDecoration.lineThrough,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          user.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            decoration:
+                                user.active ? null : TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: user.isSales
+                              ? const Color(0xFFDCFCE7)
+                              : const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: user.isSales
+                                ? const Color(0xFF86EFAC)
+                                : const Color(0xFFBFDBFE),
+                          ),
+                        ),
+                        child: Text(
+                          user.isSales ? 'SALES' : 'STOREKEEPER',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: user.isSales
+                                ? const Color(0xFF16A34A)
+                                : const Color(0xFF2563EB),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(

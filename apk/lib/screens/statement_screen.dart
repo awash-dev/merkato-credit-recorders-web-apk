@@ -864,7 +864,7 @@ class _StatementScreenState extends State<StatementScreen> {
                                           fontSize: 9.5,
                                           fontWeight: pw.FontWeight.bold,
                                           color: entry.debit > 0
-                                              ? const PdfColor.fromInt(0xFFDC2626)
+                                              ? const PdfColor.fromInt(0xFF2563EB)
                                               : const PdfColor.fromInt(0xFF94A3B8),
                                         ),
                                       ),
@@ -925,7 +925,7 @@ class _StatementScreenState extends State<StatementScreen> {
                                       style: pw.TextStyle(
                                         fontSize: 9.5,
                                         fontWeight: pw.FontWeight.bold,
-                                        color: const PdfColor.fromInt(0xFFDC2626),
+                                        color: const PdfColor.fromInt(0xFF2563EB),
                                       ),
                                     ),
                                   ),
@@ -982,7 +982,7 @@ class _StatementScreenState extends State<StatementScreen> {
                               style: pw.TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: pw.FontWeight.bold,
-                                color: const PdfColor.fromInt(0xFFDC2626),
+                                color: const PdfColor.fromInt(0xFF2563EB),
                               ),
                             ),
                           ],
@@ -1572,7 +1572,7 @@ class _StatementScreenState extends State<StatementScreen> {
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w700,
                                   color: entry.debit > 0
-                                      ? const Color(0xFFDC2626)
+                                      ? const Color(0xFF2563EB)
                                       : (isDark
                                             ? Colors.grey.shade700
                                             : Colors.grey.shade400),
@@ -1674,7 +1674,7 @@ class _StatementScreenState extends State<StatementScreen> {
                           style: const TextStyle(
                             fontWeight: FontWeight.w900,
                             fontSize: 11,
-                            color: Color(0xFFDC2626),
+                            color: Color(0xFF2563EB),
                           ),
                         ),
                       ),
@@ -1741,7 +1741,7 @@ class _StatementScreenState extends State<StatementScreen> {
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFFDC2626),
+                  color: Color(0xFF2563EB),
                 ),
               ),
             ],

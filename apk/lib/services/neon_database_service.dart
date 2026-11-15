@@ -275,7 +275,7 @@ class NeonDatabaseService {
 
     final rows = await executeSql(
       '''
-      SELECT u.id, u.name, u.email, u.phone, u.password_hash, u.role, u.store_id, u.active, sh.name AS store_name
+      SELECT u.id, u.name, u.email, u.phone, u.password_hash, u.role, u.store_id, u.active, u.assigned_stores, sh.name AS store_name
       FROM users u
       LEFT JOIN stores sh ON sh.id = u.store_id
       WHERE u.phone = \$1 OR u.phone = \$2 OR u.phone = \$3
@@ -302,16 +302,7 @@ class NeonDatabaseService {
       throw Exception('Incorrect password. Please try again.');
     }
 
-    return AppUser(
-      id: row['id']?.toString() ?? '',
-      name: row['name']?.toString() ?? '',
-      email: row['email']?.toString(),
-      phone: row['phone']?.toString(),
-      role: row['role']?.toString() ?? 'storekeeper',
-      storeId: row['store_id']?.toString(),
-      storeName: row['store_name']?.toString(),
-      active: true,
-    );
+    return AppUser.fromJson(row);
   }
 
   /// Persist session into Neon database sessions table (30 days validity)
@@ -713,35 +704,24 @@ class NeonDatabaseService {
   /// Get storekeeper users directly from Neon
   static Future<List<AppUser>> getUsersDirect() async {
     final rows = await executeSql('''
-      SELECT u.id, u.name, u.email, u.phone, u.role, u.store_id, u.active, sh.name AS store_name
+      SELECT u.id, u.name, u.email, u.phone, u.role, u.store_id, u.active, u.assigned_stores, sh.name AS store_name
       FROM users u
       LEFT JOIN stores sh ON sh.id = u.store_id
-      WHERE u.role = 'storekeeper'
+      WHERE u.role IN ('storekeeper', 'sales') OR (u.role IS NOT NULL AND u.role != 'admin')
       ORDER BY u.created_at ASC
       ''');
-    return rows
-        .map(
-          (r) => AppUser(
-            id: r['id']?.toString() ?? '',
-            name: r['name']?.toString() ?? '',
-            email: r['email']?.toString(),
-            phone: r['phone']?.toString(),
-            role: 'storekeeper',
-            storeId: r['store_id']?.toString(),
-            storeName: r['store_name']?.toString(),
-            active: isTruthy(r['active']),
-          ),
-        )
-        .toList();
+    return rows.map((r) => AppUser.fromJson(r)).toList();
   }
 
-  /// Create storekeeper user directly in Neon
+  /// Create storekeeper or sales user directly in Neon
   static Future<AppUser> createStorekeeperDirect({
     required String name,
     required String phone,
     String? email,
     required String password,
     required String storeId,
+    String role = 'storekeeper',
+    List<String>? assignedStores,
   }) async {
     final cleanPhone = normalizePhone(phone);
     if (cleanPhone == null) {
@@ -757,16 +737,17 @@ class NeonDatabaseService {
       [cleanPhone, localPhone],
     );
     if (existing.isNotEmpty) {
-      throw Exception('A storekeeper with phone $cleanPhone already exists');
+      throw Exception('A user with phone $cleanPhone already exists');
     }
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final id = 'user-$nowMs';
     final hash = hashPasswordWithSalt(password);
+    final assignedJson = jsonEncode(assignedStores ?? (storeId.isNotEmpty ? [storeId] : []));
     await executeSql(
       '''
-      INSERT INTO users (id, name, email, phone, password_hash, role, store_id, active, created_at)
-      VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9)
+      INSERT INTO users (id, name, email, phone, password_hash, role, store_id, assigned_stores, active, created_at)
+      VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10)
       ''',
       [
         id,
@@ -774,8 +755,9 @@ class NeonDatabaseService {
         email?.trim().isEmpty == true ? null : email?.trim().toLowerCase(),
         cleanPhone,
         hash,
-        'storekeeper',
+        role,
         storeId,
+        assignedJson,
         true,
         nowMs,
       ],
@@ -785,24 +767,53 @@ class NeonDatabaseService {
       name: name,
       email: email?.trim().isEmpty == true ? null : email?.trim().toLowerCase(),
       phone: cleanPhone,
-      role: 'storekeeper',
+      role: role,
       storeId: storeId,
+      assignedStoreIds: assignedStores ?? (storeId.isNotEmpty ? [storeId] : []),
       active: true,
     );
   }
 
-  /// Update storekeeper user directly in Neon
+  /// Alias for createStorekeeperDirect supporting any role
+  static Future<AppUser> createUserDirect({
+    required String name,
+    required String phone,
+    String? email,
+    required String password,
+    required String storeId,
+    String role = 'storekeeper',
+    List<String>? assignedStores,
+  }) =>
+      createStorekeeperDirect(
+        name: name,
+        phone: phone,
+        email: email,
+        password: password,
+        storeId: storeId,
+        role: role,
+        assignedStores: assignedStores,
+      );
+
+  /// Update storekeeper or sales user directly in Neon
   static Future<AppUser> updateStorekeeperDirect(
     String userId, {
     String? name,
     String? phone,
     String? storeId,
+    List<String>? assignedStores,
     bool? active,
     String? password,
+    String? role,
   }) async {
     if (name != null) {
       await executeSql('UPDATE users SET name = \$1 WHERE id = \$2', [
         name,
+        userId,
+      ]);
+    }
+    if (role != null && role.isNotEmpty) {
+      await executeSql('UPDATE users SET role = \$1 WHERE id = \$2', [
+        role,
         userId,
       ]);
     }
@@ -834,6 +845,12 @@ class NeonDatabaseService {
         userId,
       ]);
     }
+    if (assignedStores != null) {
+      await executeSql('UPDATE users SET assigned_stores = \$1 WHERE id = \$2', [
+        jsonEncode(assignedStores),
+        userId,
+      ]);
+    }
     if (active != null) {
       await executeSql('UPDATE users SET active = \$1 WHERE id = \$2', [
         active,
@@ -849,7 +866,7 @@ class NeonDatabaseService {
     }
     final rows = await executeSql(
       '''
-      SELECT u.id, u.name, u.email, u.phone, u.role, u.store_id, u.active, sh.name AS store_name
+      SELECT u.id, u.name, u.email, u.phone, u.role, u.store_id, u.active, u.assigned_stores, sh.name AS store_name
       FROM users u
       LEFT JOIN stores sh ON sh.id = u.store_id
       WHERE u.id = \$1
@@ -858,17 +875,7 @@ class NeonDatabaseService {
       [userId],
     );
     if (rows.isNotEmpty) {
-      final r = rows.first;
-      return AppUser(
-        id: r['id']?.toString() ?? userId,
-        name: r['name']?.toString() ?? '',
-        email: r['email']?.toString(),
-        phone: r['phone']?.toString(),
-        role: 'storekeeper',
-        storeId: r['store_id']?.toString(),
-        storeName: r['store_name']?.toString(),
-        active: isTruthy(r['active']),
-      );
+      return AppUser.fromJson(rows.first);
     }
     return AppUser(
       id: userId,
@@ -1540,7 +1547,7 @@ class NeonDatabaseService {
         SELECT * FROM store_inventory
         WHERE (store_id = \$1 OR store_id IS NULL)
           AND (is_deleted IS NULL OR is_deleted = FALSE)
-        ORDER BY product_name ASC
+        ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
         ''',
         [storeId],
       );
@@ -1548,7 +1555,7 @@ class NeonDatabaseService {
       rows = await executeSql('''
         SELECT * FROM store_inventory
         WHERE (is_deleted IS NULL OR is_deleted = FALSE)
-        ORDER BY product_name ASC
+        ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
         ''');
     }
     return rows.map((r) => InventoryProduct.fromJson(r)).toList();
@@ -1675,6 +1682,96 @@ class NeonDatabaseService {
         ? storekeeperPrice
         : unitPrice;
     final totalValue = totalInitialPieces * unitPrice;
+
+    // Check if product with same name already exists in this store (Fix duplicate same names)
+    final existing = await getProductByNameDirect(cleanName, storeId);
+    if (existing != null) {
+      final newTotalPieces = existing.currentQuantity + totalInitialPieces;
+      final newCartons = pcsPerCtn > 0
+          ? (newTotalPieces / pcsPerCtn).floorToDouble()
+          : 0.0;
+      final effectiveUnitPrice = unitPrice > 0 ? unitPrice : existing.unitPrice;
+      final effectiveSkPrice = (storekeeperPrice != null && storekeeperPrice > 0)
+          ? storekeeperPrice
+          : (existing.storekeeperPrice > 0
+              ? existing.storekeeperPrice
+              : effectiveUnitPrice);
+      final newTotalVal = newTotalPieces * effectiveUnitPrice;
+
+      final updateRows = await executeSql(
+        '''
+        UPDATE store_inventory SET
+          current_quantity = \$1::numeric,
+          total_quantity = \$1::numeric,
+          quantity_cartons = \$2::numeric,
+          pcs_per_carton = \$3::numeric,
+          quantity_per_carton = \$3::numeric,
+          unit_price = \$4::numeric,
+          price_per_piece = \$4::numeric,
+          storekeeper_price = \$5::numeric,
+          total_value = \$6::numeric,
+          last_transaction_date = \$7,
+          updated_at = CURRENT_TIMESTAMP,
+          updated_by = \$8
+        WHERE id = \$9::uuid
+        RETURNING *
+        ''',
+        [
+          newTotalPieces,
+          newCartons,
+          pcsPerCtn,
+          effectiveUnitPrice,
+          effectiveSkPrice,
+          newTotalVal,
+          txnDate,
+          createdBy,
+          existing.id,
+        ],
+      );
+
+      final updatedProduct = updateRows.isNotEmpty
+          ? InventoryProduct.fromJson(updateRows.first)
+          : existing;
+
+      if (totalInitialPieces > 0) {
+        try {
+          await executeSql(
+            '''
+            INSERT INTO stock_movements (
+              store_id, product_id, movement_type, quantity,
+              transaction_unit, conversion_factor, base_quantity,
+              previous_stock, new_stock, unit_price, total_price,
+              cartons, loose_pieces, total_pieces,
+              transaction_date, source_type, source_id, note, created_by
+            ) VALUES (
+              \$1, \$2::uuid, 'IN', \$3::numeric,
+              'Pcs', \$4::numeric, \$3::numeric,
+              \$5::numeric, \$6::numeric, \$7::numeric, \$8::numeric,
+              \$9::numeric, \$10::numeric, \$3::numeric,
+              \$11::date, 'REGISTRATION_MERGE', \$12, 'Merged stock into existing product', \$13
+            )
+            ''',
+            [
+              updatedProduct.storeId,
+              updatedProduct.id,
+              totalInitialPieces,
+              pcsPerCtn,
+              existing.currentQuantity,
+              newTotalPieces,
+              pCost,
+              totalInitialPieces * pCost,
+              openingCartons,
+              openingLoosePieces,
+              txnDate,
+              supplierName,
+              createdBy,
+            ],
+          );
+        } catch (_) {}
+      }
+
+      return updatedProduct;
+    }
 
     final rows = await executeSql(
       '''

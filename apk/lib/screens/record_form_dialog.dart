@@ -171,6 +171,40 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
     }
   }
 
+  bool get isDelala => widget.activeTab == 'delala';
+  bool get isStock => widget.activeTab == 'stock';
+
+  final List<LineItemFormItem> _deletedItemsHistory = [];
+  final List<int> _deletedItemIndices = [];
+
+  bool get _canUndo => _activeItemIndex > 0 || _deletedItemsHistory.isNotEmpty;
+  bool get _canRedo => _activeItemIndex < _formItems.length - 1;
+
+  void _handleUndo() {
+    if (_activeItemIndex > 0) {
+      setState(() {
+        _activeItemIndex--;
+      });
+    } else if (_deletedItemsHistory.isNotEmpty) {
+      setState(() {
+        final restored = _deletedItemsHistory.removeLast();
+        final restoreIdx = _deletedItemIndices.isNotEmpty
+            ? _deletedItemIndices.removeLast().clamp(0, _formItems.length)
+            : 0;
+        _formItems.insert(restoreIdx, restored);
+        _activeItemIndex = restoreIdx;
+      });
+    }
+  }
+
+  void _handleRedo() {
+    if (_activeItemIndex < _formItems.length - 1) {
+      setState(() {
+        _activeItemIndex++;
+      });
+    }
+  }
+
   @override
   void dispose() {
     _titleController.dispose();
@@ -178,6 +212,9 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
     _dateController.dispose();
     _otherUnitController.dispose();
     for (final it in _formItems) {
+      it.dispose();
+    }
+    for (final it in _deletedItemsHistory) {
       it.dispose();
     }
     super.dispose();
@@ -204,7 +241,8 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
     if (_formItems.length <= 1) return;
     setState(() {
       final removed = _formItems.removeAt(index);
-      removed.dispose();
+      _deletedItemsHistory.add(removed);
+      _deletedItemIndices.add(index);
       if (_activeItemIndex >= _formItems.length) {
         _activeItemIndex = _formItems.length - 1;
       }
@@ -298,6 +336,27 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
       }
     }
     return items;
+  }
+
+  double _calculateItemTotal(LineItemFormItem it) {
+    final cartons = double.tryParse(it.cartonsController.text) ?? 0.0;
+    final pcs = double.tryParse(it.pcsController.text) ?? 1.0;
+    final price = double.tryParse(it.priceController.text) ?? 0.0;
+    final isDebit = it.sign == '+';
+    final isCashBorrow = isDebit && it.isCashBorrow && isDelala;
+    final isItemReturn = !isDebit && it.isItemReturn;
+    final bool useInventory = (isDebit && !isCashBorrow) || isStock || isItemReturn;
+
+    if (useInventory) {
+      if (it.packagingUnit == 'Carton') {
+        final effectivePcs = pcs > 0 ? pcs : 1.0;
+        return cartons * effectivePcs * price;
+      } else {
+        return cartons * price;
+      }
+    } else {
+      return price;
+    }
   }
 
   Map<String, dynamic> _getPartyAuditSummary(String partyName) {
@@ -520,25 +579,11 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
     final currentItem = _formItems[_activeItemIndex];
     final isDebit = currentItem.sign == '+';
 
-    final cartons = double.tryParse(currentItem.cartonsController.text) ?? 0.0;
-    final pcs = double.tryParse(currentItem.pcsController.text) ?? 0.0;
-    final price = double.tryParse(currentItem.priceController.text) ?? 0.0;
-
     final isCashBorrow = isDebit && currentItem.isCashBorrow && isDelala;
     final isItemReturn = !isDebit && currentItem.isItemReturn;
     final bool useInventory = (isDebit && !isCashBorrow) || isStock || isItemReturn;
 
-    double calculatedTotal = 0.0;
-    if (useInventory) {
-      if (currentItem.packagingUnit == 'Carton') {
-        final effectivePcs = pcs > 0 ? pcs : 1.0;
-        calculatedTotal = cartons * effectivePcs * price;
-      } else {
-        calculatedTotal = cartons * price;
-      }
-    } else {
-      calculatedTotal = price;
-    }
+    double calculatedTotal = _calculateItemTotal(currentItem);
 
     // Existing party names for auto-suggest
     final existingPartyNames = widget.existingRecords != null
@@ -649,52 +694,119 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                         );
                       },
                     ),
-                    if (!isDelala) ...[
-                      Builder(
-                        builder: (context) {
-                          final pName = _titleController.text.trim();
-                          if (pName.isEmpty) return const SizedBox.shrink();
-                          final auditSummary = _getPartyAuditSummary(pName);
-                          final bal = auditSummary['balance'] as double;
-                          final remPcs = auditSummary['remainingPcs'] as double;
-                          if (bal == 0.0 && remPcs == 0.0) return const SizedBox.shrink();
+                    Builder(
+                      builder: (context) {
+                        final pName = _titleController.text.trim();
+                        if (pName.isEmpty) return const SizedBox.shrink();
+                        final auditSummary = _getPartyAuditSummary(pName);
+                        final bal = auditSummary['balance'] as double;
+                        final remPcs = auditSummary['remainingPcs'] as double;
+                        if (bal == 0.0 && remPcs == 0.0) return const SizedBox.shrink();
 
-                          return Container(
-                            margin: const EdgeInsets.only(top: 8),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: isDark ? const Color(0xFF334155) : const Color(0xFFBFDBFE),
-                              ),
+                        return Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFBFDBFE),
                             ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.info_outline,
-                                  size: 14,
-                                  color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                size: 14,
+                                color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  _isAmharic
+                                      ? 'የቀድሞ ቀሪ፦ ETB ${_currencyFormat.format(bal)} · ቀሪ ዕቃ፦ ${remPcs.toInt()} ፍሬ'
+                                      : 'Current Balance: ETB ${_currencyFormat.format(bal)} · Remaining Items: ${remPcs.toInt()} pcs',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
+                                  ),
                                 ),
-                                const SizedBox(width: 6),
-                                Expanded(
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Multi-item Formed Rows Selector Chips
+                    if (!isStock && _formItems.length > 1) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildFieldLabel(
+                            _isAmharic ? 'የተመዘገቡ ዕቃዎች (ረድፎች)' : 'Formed Items / Rows',
+                            isDark,
+                          ),
+                          Text(
+                            '${_activeItemIndex + 1} of ${_formItems.length}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: List.generate(_formItems.length, (idx) {
+                            final it = _formItems[idx];
+                            final isCur = idx == _activeItemIndex;
+                            final itName = it.nameController.text.trim();
+                            final itemTotal = _calculateItemTotal(it);
+                            final totalSuffix = itemTotal > 0 ? ' (ETB ${_currencyFormat.format(itemTotal)})' : '';
+                            final chipText = itName.isNotEmpty
+                                ? '${idx + 1}. $itName$totalSuffix'
+                                : (_isAmharic ? 'ረድፍ ${idx + 1}$totalSuffix' : 'Row ${idx + 1}$totalSuffix');
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: InkWell(
+                                onTap: () => setState(() => _activeItemIndex = idx),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: isCur
+                                        ? const Color(0xFF2563EB)
+                                        : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: isCur
+                                          ? const Color(0xFF2563EB)
+                                          : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                                    ),
+                                  ),
                                   child: Text(
-                                    _isAmharic
-                                        ? 'የቀድሞ ቀሪ፦ ETB ${_currencyFormat.format(bal)} · ቀሪ ዕቃ፦ ${remPcs.toInt()} ፍሬ'
-                                        : 'Current Balance: ETB ${_currencyFormat.format(bal)} · Remaining Items: ${remPcs.toInt()} pcs',
+                                    chipText,
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 11.5,
                                       fontWeight: FontWeight.bold,
-                                      color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
+                                      color: isCur
+                                          ? Colors.white
+                                          : (isDark ? Colors.white70 : const Color(0xFF334155)),
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          );
-                        },
+                              ),
+                            );
+                          }),
+                        ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
                     ],
 
                     // 3. Transaction Type Toggle: Debit (+) Goods vs Credit (-) Payment / Loan Return
@@ -740,10 +852,18 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                   Flexible(
                                     child: Text(
                                       isDelala
-                                          ? (_isAmharic ? 'ውሰት (+)' : 'Borrow (+)')
-                                          : (_isAmharic
-                                                ? 'ዴቢት (+)\nዕቃ / ብድር'
-                                                : 'Debit (+)\nGoods / Loan'),
+                                          ? (_isAmharic ? 'ደላላ ወሰደ (+)' : 'Delala Took (+)')
+                                          : (widget.activeTab == 'supplier'
+                                                ? (_isAmharic
+                                                      ? 'ግዢ (+)\nዕቃ ተቀበልን'
+                                                      : 'Purchase (+)\nBought Goods')
+                                                : (widget.activeTab == 'customer'
+                                                      ? (_isAmharic
+                                                            ? 'ሽያጭ (+)\nዕቃ ሰጠን'
+                                                            : 'Sale (+)\nSold Goods')
+                                                      : (_isAmharic
+                                                            ? 'ዴቢት (+)\nዕቃ'
+                                                            : 'Debit (+)\nGoods'))),
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontSize: 12,
@@ -808,10 +928,20 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                   Flexible(
                                     child: Text(
                                       isDelala
-                                          ? (_isAmharic ? 'መልስ (-)' : 'Return (-)')
-                                          : (_isAmharic
-                                                ? 'ክሬዲት (-)\nክፍያ / ባንክ'
-                                                : 'Credit (-)\nPayment'),
+                                          ? (_isAmharic
+                                                ? 'ደላላ መለሰ / ከፈለ (-)'
+                                                : 'Delala Returned / Paid (-)')
+                                          : (widget.activeTab == 'supplier'
+                                                ? (_isAmharic
+                                                      ? 'ክፍያ (-)\nለአቅራቢ ከፈልን'
+                                                      : 'Payment (-)\nPaid Supplier')
+                                                : (widget.activeTab == 'customer'
+                                                      ? (_isAmharic
+                                                            ? 'ክፍያ (-)\nከደንበኛ ተቀበልን'
+                                                            : 'Payment (-)\nCustomer Paid')
+                                                      : (_isAmharic
+                                                            ? 'ክሬዲት (-)\nክፍያ'
+                                                            : 'Credit (-)\nPayment'))),
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontSize: 12,
@@ -856,7 +986,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                   ),
                                 ),
                                 child: Text(
-                                  _isAmharic ? 'ዕቃ መውሰድ' : 'Borrow Items',
+                                  _isAmharic ? 'ዕቃ ወሰደ' : 'Took Items',
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: !currentItem.isCashBorrow ? FontWeight.bold : FontWeight.normal,
@@ -893,7 +1023,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                   ),
                                 ),
                                 child: Text(
-                                  _isAmharic ? 'ባንክ / ብር' : 'Bank / Cash',
+                                  _isAmharic ? 'ብር / ባንክ ወሰደ' : 'Took Cash / Bank',
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: currentItem.isCashBorrow ? FontWeight.bold : FontWeight.normal,
@@ -953,7 +1083,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                       const SizedBox(width: 4),
                                     ],
                                     Text(
-                                      _isAmharic ? 'ባንክ / ብር መክፈል' : 'Pay Money / Bank',
+                                      _isAmharic ? 'ብር / ባንክ ከፈለ' : 'Paid Money / Bank',
                                       style: TextStyle(
                                         fontSize: 11,
                                         fontWeight: !currentItem.isItemReturn
@@ -1012,7 +1142,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                       const SizedBox(width: 4),
                                     ],
                                     Text(
-                                      _isAmharic ? 'ዕቃ መመለስ' : 'Return Items',
+                                      _isAmharic ? 'ዕቃ መለሰ' : 'Returned Items',
                                       style: TextStyle(
                                         fontSize: 11,
                                         fontWeight: currentItem.isItemReturn
@@ -1150,12 +1280,17 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                     // Item Field (Clean Single Label matching Stitch UI)
                     _buildFieldLabel(
                       isItemReturn
-                          ? (_isAmharic ? 'የሚመለሰው ዕቃ ስም *' : 'Returning Item Name *')
-                          : (_isAmharic ? 'የዕቃ ስም' : 'Item Name'),
+                          ? (_isAmharic
+                                ? (isDelala ? 'ደላላ የመለሰው ዕቃ *' : 'የሚመለሰው ዕቃ ስም *')
+                                : 'Returning Item Name *')
+                          : (_isAmharic
+                                ? (isDelala ? 'ደላላ የወሰደው ዕቃ *' : 'የዕቃ ስም *')
+                                : (isDelala ? 'Item Taken by Delala *' : 'Item Name *')),
                       isDark,
                     ),
                     const SizedBox(height: 6),
                     Autocomplete<String>(
+                      key: ValueKey('${currentItem.id}-$_activeItemIndex'),
                       initialValue: TextEditingValue(text: currentItem.nameController.text),
                       optionsBuilder: (textEditingValue) {
                         if (isItemReturn) {
@@ -1652,23 +1787,91 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Optional Add Another Row (for Customer / Supplier / Delala)
+                  // Optional Add Another Row & Undo / Redo (for Customer / Supplier / Delala)
                   if (!isStock) ...[
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
+                        // Left: Delete this item
                         if (_formItems.length > 1)
                           TextButton.icon(
                             onPressed: () => _removeItem(_activeItemIndex),
                             icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFEF4444)),
-                            label: Text(_isAmharic ? 'ይህን ዕቃ ሰርዝ' : 'Delete this item', style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12)),
+                            label: Text(
+                              _isAmharic ? 'ይህን ዕቃ ሰርዝ' : 'Delete this item',
+                              style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12),
+                            ),
                           )
                         else
-                          const SizedBox(),
+                          const SizedBox(width: 20),
+
+                        // Center: Undo and Redo Controls ("in bettwen this see previews data formed can see in form and can updates")
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                              width: 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // UNDO / PREVIOUS ITEM BUTTON
+                              IconButton(
+                                icon: const Icon(Icons.undo_rounded, size: 18),
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                splashRadius: 16,
+                                tooltip: _isAmharic
+                                    ? 'ወደ ኋላ (የቀደመ መዝገብ)'
+                                    : 'Undo / Previous Item',
+                                color: _canUndo
+                                    ? (isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB))
+                                    : (isDark ? Colors.grey.shade700 : Colors.grey.shade400),
+                                onPressed: _canUndo ? _handleUndo : null,
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                                child: Text(
+                                  '${_activeItemIndex + 1} / ${_formItems.length}',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: 'monospace',
+                                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                                  ),
+                                ),
+                              ),
+                              // REDO / NEXT ITEM BUTTON
+                              IconButton(
+                                icon: const Icon(Icons.redo_rounded, size: 18),
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                splashRadius: 16,
+                                tooltip: _isAmharic
+                                    ? 'ወደ ፊት (ቀጣይ መዝገብ)'
+                                    : 'Redo / Next Item',
+                                color: _canRedo
+                                    ? (isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB))
+                                    : (isDark ? Colors.grey.shade700 : Colors.grey.shade400),
+                                onPressed: _canRedo ? _handleRedo : null,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Right: + Add Another Row
                         TextButton.icon(
                           onPressed: _addItem,
                           icon: const Icon(Icons.add, size: 16),
-                          label: Text(_isAmharic ? '+ ሌላ ረድፍ ጨምር' : '+ Add Another Row', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+                          label: Text(
+                            _isAmharic ? '+ ሌላ ረድፍ ጨምር' : '+ Add Another Row',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                          ),
                           style: TextButton.styleFrom(foregroundColor: const Color(0xFF2563EB)),
                         ),
                       ],

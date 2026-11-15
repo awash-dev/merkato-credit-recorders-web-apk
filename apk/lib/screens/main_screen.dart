@@ -75,8 +75,11 @@ class _MainScreenState extends State<MainScreen> {
     // Admin sees all 4 tabs: Customer, Supplier, Delala, Store (opens on Customer).
     // Storekeepers only have store pages, so they open straight on the Store tab
     // and the party/delala tabs are hidden from the bottom bar.
-    _currentTabIndex = widget.currentUser.isStorekeeper ? 3 : 0;
-    if (widget.currentUser.isStorekeeper) {
+    _currentTabIndex =
+        (widget.currentUser.isStorekeeper || widget.currentUser.isSales)
+            ? 3
+            : 0;
+    if (widget.currentUser.isStorekeeper || widget.currentUser.isSales) {
       // The store comes from the signed-in user row in the database; when it
       // is missing we keep null instead of inventing a store id.
       _selectedStoreId = widget.currentUser.storeId;
@@ -154,17 +157,19 @@ class _MainScreenState extends State<MainScreen> {
   /// Store name shown in the header. Resolved from the signed-in user row and
   /// the `stores` table — never from a hardcoded store list.
   String get _activeStoreLabel {
-    if (widget.currentUser.isAdmin) {
-      if (_selectedStoreId == 'all') return 'All Stores (Central)';
+    if (_selectedStoreId != null && _selectedStoreId != 'all') {
       final match = _stores.where((s) => s.id == _selectedStoreId);
-      return match.isNotEmpty ? match.first.name : 'All Stores';
+      if (match.isNotEmpty) return match.first.name;
+    }
+    if (_selectedStoreId == 'all') {
+      return _isAmharic ? 'ሁሉም መደብሮች' : 'All Stores (Central)';
     }
 
     final ownName = widget.currentUser.storeName;
     if (ownName != null && ownName.isNotEmpty) return ownName;
 
     final match = _stores.where((s) => s.id == widget.currentUser.storeId);
-    return match.isNotEmpty ? match.first.name : 'No store assigned';
+    return match.isNotEmpty ? match.first.name : (_isAmharic ? 'መደብር አልተመረጠም' : 'No store assigned');
   }
 
   Future<void> _loadStoresAndRecords() async {
@@ -175,8 +180,8 @@ class _MainScreenState extends State<MainScreen> {
     try {
       final stores = await ApiService.getStores();
       String? targetStoreId = _selectedStoreId;
-      if (widget.currentUser.isStorekeeper) {
-        targetStoreId = widget.currentUser.storeId ?? _selectedStoreId;
+      if (widget.currentUser.isStorekeeper || widget.currentUser.isSales) {
+        targetStoreId = _selectedStoreId ?? widget.currentUser.storeId;
         if ((targetStoreId == null || targetStoreId.isEmpty) &&
             stores.isNotEmpty) {
           targetStoreId = stores.first.id;
@@ -208,8 +213,8 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _reloadRecordsOnly() async {
     try {
       String? targetStoreId = _selectedStoreId;
-      if (widget.currentUser.isStorekeeper) {
-        targetStoreId = widget.currentUser.storeId ?? _selectedStoreId;
+      if (widget.currentUser.isStorekeeper || widget.currentUser.isSales) {
+        targetStoreId = _selectedStoreId ?? widget.currentUser.storeId;
         if ((targetStoreId == null || targetStoreId.isEmpty) &&
             _stores.isNotEmpty) {
           targetStoreId = _stores.first.id;
@@ -240,36 +245,24 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _onStoreChanged(String? newStoreId) {
-    if (widget.currentUser.isStorekeeper) return;
+    if (newStoreId == null || newStoreId == _selectedStoreId) return;
     setState(() {
-      _selectedStoreId = newStoreId ?? 'all';
+      _selectedStoreId = newStoreId;
     });
     _reloadRecordsOnly();
   }
 
-  /// Only includes stores that actually have existing records or inventory products
-  List<Store> get _storesWithRecords {
-    if (_stores.isEmpty) return [];
-    final storeIdsWithRecords = <String>{};
-    for (final r in _records) {
-      if (r.storeId != null && r.storeId!.isNotEmpty) {
-        storeIdsWithRecords.add(r.storeId!);
-      }
-    }
-    for (final p in _inventoryProducts) {
-      if (p.storeId != null && p.storeId!.isNotEmpty) {
-        storeIdsWithRecords.add(p.storeId!);
-      }
-    }
-    final filtered =
-        _stores.where((s) => storeIdsWithRecords.contains(s.id)).toList();
-    return filtered.isNotEmpty ? filtered : _stores;
+  /// Stores accessible by current user (Admin sees all; Storekeeper/Sales sees assigned)
+  List<Store> get _accessibleStores {
+    if (widget.currentUser.isAdmin) return _stores;
+    final list = _stores.where((s) => widget.currentUser.canAccessStore(s.id)).toList();
+    return list.isNotEmpty ? list : _stores;
   }
 
   List<LedgerRecord> get _filteredRecords {
     final type = _currentTabType;
-    return _records.where((r) {
-      if (widget.currentUser.isStorekeeper) {
+    final list = _records.where((r) {
+      if (widget.currentUser.isStorekeeper || widget.currentUser.isSales) {
         if (r.type != 'stock') return false;
         if (_selectedStoreId != null &&
             _selectedStoreId!.isNotEmpty &&
@@ -300,6 +293,54 @@ class _MainScreenState extends State<MainScreen> {
       }
       return true;
     }).toList();
+
+    // Fix duplicate same names: Consolidate records by title and type into one card
+    final Map<String, LedgerRecord> merged = {};
+    for (final r in list) {
+      final key = '${r.type}-${r.title.trim().toLowerCase()}';
+      if (!merged.containsKey(key)) {
+        merged[key] = r;
+      } else {
+        final exist = merged[key]!;
+        final Set<String> existingItemIds = exist.items.map((it) => it.id).toSet();
+        final newItems = r.items.where((it) => !existingItemIds.contains(it.id)).toList();
+        final combinedItems = [...exist.items, ...newItems];
+        final latestDate = r.date.compareTo(exist.date) > 0 ? r.date : exist.date;
+        final latestCreated = (r.createdAt ?? 0) > (exist.createdAt ?? 0)
+            ? r.createdAt
+            : exist.createdAt;
+        final latestUpdated = (r.updatedAt ?? 0) > (exist.updatedAt ?? 0)
+            ? r.updatedAt
+            : exist.updatedAt;
+
+        merged[key] = exist.copyWith(
+          items: combinedItems,
+          date: latestDate,
+          notes: (r.notes != null && r.notes!.isNotEmpty)
+              ? (exist.notes != null && exist.notes!.isNotEmpty
+                  ? '${exist.notes}; ${r.notes}'
+                  : r.notes)
+              : exist.notes,
+          createdAt: latestCreated,
+          updatedAt: latestUpdated,
+        );
+      }
+    }
+
+    final result = merged.values.toList();
+
+    // Newly registered and updated records at the TOP of the list!
+    result.sort((a, b) {
+      final aTime = (a.updatedAt != null && a.updatedAt! > 0)
+          ? a.updatedAt!
+          : (a.createdAt ?? 0);
+      final bTime = (b.updatedAt != null && b.updatedAt! > 0)
+          ? b.updatedAt!
+          : (b.createdAt ?? 0);
+      return bTime.compareTo(aTime);
+    });
+
+    return result;
   }
 
   Future<void> _openCreateRecordDialog() async {
@@ -308,7 +349,8 @@ class _MainScreenState extends State<MainScreen> {
       builder: (ctx) => RecordFormDialog(
         activeTab: _currentTabType,
         existingRecords: _records,
-        storeId: widget.currentUser.isStorekeeper
+        storeId: (widget.currentUser.isStorekeeper ||
+                widget.currentUser.isSales)
             ? widget.currentUser.storeId
             : (_selectedStoreId == 'all'
                   ? (_stores.isNotEmpty ? _stores.first.id : null)
@@ -318,7 +360,7 @@ class _MainScreenState extends State<MainScreen> {
 
     if (result != null) {
       try {
-        // Smart merge: if party ledger already exists in this store, append the new transaction rows
+        // Smart merge: if party/stock ledger already exists in this store, append new transaction rows (Fix duplicate same names)
         final existingIdx = _records.indexWhere(
           (r) =>
               r.type == result.type &&
@@ -329,7 +371,7 @@ class _MainScreenState extends State<MainScreen> {
                   result.storeId == null),
         );
 
-        if (existingIdx >= 0 && result.type != 'stock') {
+        if (existingIdx >= 0) {
           final existing = _records[existingIdx];
           final updated = existing.copyWith(
             items: [...existing.items, ...result.items],
@@ -339,23 +381,36 @@ class _MainScreenState extends State<MainScreen> {
             updatedAt: DateTime.now().millisecondsSinceEpoch,
           );
           await ApiService.updateRecord(updated);
+          setState(() {
+            _records.removeAt(existingIdx);
+            _records.insert(0, updated);
+          });
           _reloadRecordsOnly();
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Added transaction to "${existing.title}" in Neon DB',
+                _isAmharic
+                    ? '"${existing.title}" ላይ ዝርዝሩ ተጨምሮ ተመዝግቧል'
+                    : 'Added transaction to "${existing.title}"',
               ),
               backgroundColor: const Color(0xFF2563EB),
             ),
           );
         } else {
-          await ApiService.createRecord(result, storeId: result.storeId);
+          final created = await ApiService.createRecord(result, storeId: result.storeId);
+          setState(() {
+            _records.insert(0, created);
+          });
           _reloadRecordsOnly();
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Saved "${result.title}" to Neon DB'),
+              content: Text(
+                _isAmharic
+                    ? '"${result.title}" በተሳካ ሁኔታ ተመዝግቧል'
+                    : 'Saved "${result.title}" successfully',
+              ),
               backgroundColor: const Color(0xFF2563EB),
             ),
           );
@@ -726,7 +781,7 @@ class _MainScreenState extends State<MainScreen> {
       }
       final netBalance = totalDebit - totalCredit;
 
-      // Card 1: Invoiced (Outcome -> Red)
+      // Card 1: Invoiced (Debit -> Red matching Image 3)
       card1 = _buildTopGridCard(
         isDark: isDark,
         title: _isAmharic ? 'ኢንቮይስ' : 'Invoiced',
@@ -773,7 +828,7 @@ class _MainScreenState extends State<MainScreen> {
       }
       final netBalance = totalDebit - totalCredit;
 
-      // Card 1: Invoiced (Outcome -> Red)
+      // Card 1: Invoiced (Debit -> Red matching Image 3)
       card1 = _buildTopGridCard(
         isDark: isDark,
         title: _isAmharic ? 'ኢንቮይስ' : 'Invoiced',
@@ -834,7 +889,7 @@ class _MainScreenState extends State<MainScreen> {
       }
       final netBalance = totalBorrowedPrice - totalSettledPrice;
 
-      // Card 1: Invoiced (Borrowed goods / Outcome -> Red)
+      // Card 1: Invoiced (Borrowed goods / Debit -> Red matching Image 3)
       card1 = _buildTopGridCard(
         isDark: isDark,
         title: _isAmharic ? 'ኢንቮይስ' : 'Invoiced',
@@ -900,6 +955,8 @@ class _MainScreenState extends State<MainScreen> {
         subtitle: widget.currentUser.isAdmin
             ? (_isAmharic ? 'ጠቅላላ' : 'Total')
             : (_isAmharic ? 'አድሚን' : 'Admin'),
+        valueColor:
+            widget.currentUser.isAdmin ? const Color(0xFF2563EB) : null,
         padding: compactPad,
       );
 
@@ -919,141 +976,21 @@ class _MainScreenState extends State<MainScreen> {
         title: _isAmharic ? 'ክምችት' : 'Stock',
         mainValue: '${totalPieces.toInt()} ${_isAmharic ? "ፍሬ" : "pcs"}',
         subtitle: _isAmharic ? 'ያለ' : 'Available',
+        valueColor: const Color(0xFF16A34A),
         padding: compactPad,
-      );
-
-      // Card 4: Store Dropdown Card (for Admin to select store side-by-side with Stock)
-      final isSelectedStoreEmpty = _selectedStoreId != 'all' &&
-          (!_storesWithRecords.any((s) => s.id == _selectedStoreId) ||
-              _inventoryProducts.isEmpty);
-
-      final card4BorderColor = isSelectedStoreEmpty
-          ? const Color(0xFFDC2626).withValues(alpha: 0.6)
-          : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0));
-
-      final card4 = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E293B) : Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: card4BorderColor, width: 1.0),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-              blurRadius: 4,
-              offset: const Offset(0, 1.5),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _isAmharic ? 'መደብር' : 'Store',
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white : Colors.black,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 3),
-            DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: (_selectedStoreId == 'all' ||
-                        _stores.any((s) => s.id == _selectedStoreId))
-                    ? _selectedStoreId
-                    : 'all',
-                isDense: true,
-                isExpanded: true,
-                dropdownColor:
-                    isDark ? const Color(0xFF1E293B) : Colors.white,
-                icon: Icon(
-                  Icons.arrow_drop_down,
-                  size: 16,
-                  color: isDark
-                      ? const Color(0xFF94A3B8)
-                      : const Color(0xFF475569),
-                ),
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 12,
-                  fontFamily: 'monospace',
-                  letterSpacing: -0.2,
-                  color: isDark ? Colors.white : const Color(0xFF0F172A),
-                ),
-                items: [
-                  DropdownMenuItem(
-                    value: 'all',
-                    child: Text(
-                      _isAmharic ? 'ሁሉም' : 'All Stores',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  ..._stores.map((s) {
-                    final hasRec =
-                        _storesWithRecords.any((sw) => sw.id == s.id);
-                    return DropdownMenuItem(
-                      value: s.id,
-                      child: Text(
-                        hasRec
-                            ? s.name
-                            : '${s.name} (${_isAmharic ? 'ባዶ' : 'Empty'})',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: hasRec
-                              ? null
-                              : (isDark
-                                  ? const Color(0xFF94A3B8)
-                                  : const Color(0xFF64748B)),
-                        ),
-                      ),
-                    );
-                  }),
-                ],
-                onChanged: _onStoreChanged,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              isSelectedStoreEmpty
-                  ? (_isAmharic ? 'ዳታ ባዶ ነው' : 'Data empty')
-                  : (_isAmharic ? 'መምረጫ' : 'Select'),
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-                color: isSelectedStoreEmpty
-                    ? const Color(0xFFDC2626)
-                    : (isDark
-                        ? const Color(0xFF94A3B8)
-                        : const Color(0xFF475569)),
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
       );
 
       if (widget.currentUser.isAdmin) {
         return Padding(
           padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(child: card1),
-                const SizedBox(width: 5),
-                Expanded(child: card2),
-                const SizedBox(width: 5),
-                Expanded(child: card3),
-                const SizedBox(width: 5),
-                Expanded(child: card4),
-              ],
-            ),
+          child: Row(
+            children: [
+              Expanded(child: card1),
+              const SizedBox(width: 8),
+              Expanded(child: card2),
+              const SizedBox(width: 8),
+              Expanded(child: card3),
+            ],
           ),
         );
       }
@@ -1099,8 +1036,20 @@ class _MainScreenState extends State<MainScreen> {
     );
 
     if (result != null && mounted) {
+      // Place newly registered product at the top of the list & auto-expand (new register do top list)
+      setState(() {
+        _inventoryProducts.removeWhere((p) =>
+            p.id == result.id ||
+            p.productName.trim().toLowerCase() ==
+                result.productName.trim().toLowerCase());
+        _inventoryProducts.insert(0, result);
+        _expandedProductIds.add(result.id);
+      });
       await _reloadRecordsOnly();
       if (!mounted) return;
+      setState(() {
+        _expandedProductIds.add(result.id);
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -1131,8 +1080,20 @@ class _MainScreenState extends State<MainScreen> {
     );
 
     if (result != null && mounted) {
+      // Move updated product to the top of the list & keep expanded
+      setState(() {
+        _inventoryProducts.removeWhere((p) =>
+            p.id == result.id ||
+            p.productName.trim().toLowerCase() ==
+                result.productName.trim().toLowerCase());
+        _inventoryProducts.insert(0, result);
+        _expandedProductIds.add(result.id);
+      });
       await _reloadRecordsOnly();
       if (!mounted) return;
+      setState(() {
+        _expandedProductIds.add(result.id);
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -1505,150 +1466,327 @@ class _MainScreenState extends State<MainScreen> {
               ),
               if (widget.currentUser.isAdmin) ...[
                 const SizedBox(height: 12),
-                // Store Filter & Settings (Filter which store has records)
-                StatefulBuilder(
-                  builder: (ctx3, setStoreState) {
-                    final modalTheme = Theme.of(ctx);
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF242C40)
-                            : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
+                // Salespersons & Storekeepers Management (Add Sales in Settings)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? const Color(0xFF242C40)
+                        : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF2E384D)
+                          : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.point_of_sale_rounded,
+                            size: 19,
+                            color: Color(0xFF16A34A),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _isAmharic
+                                ? 'የሽያጭ ሠራተኞች እና ተጠቃሚዎች (Sales)'
+                                : 'Salespersons & Users Management',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _isAmharic
+                            ? 'የሽያጭ ሠራተኞችን (Sales) እና የመጋዘን ኃላፊዎችን በቀላሉ ይመዝግቡ እና ያስተዳድሩ፦'
+                            : 'Add Sales account or manage storekeeper accounts:',
+                        style: TextStyle(
+                          fontSize: 11,
                           color: isDark
-                              ? const Color(0xFF2E384D)
-                              : const Color(0xFFE2E8F0),
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
                         ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      const SizedBox(height: 10),
+                      Row(
                         children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.storefront_rounded,
-                                size: 18,
-                                color: Color(0xFF2563EB),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                _openAddSalesUserDialog();
+                              },
+                              icon: const Icon(
+                                Icons.person_add_alt_1_outlined,
+                                size: 15,
                               ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _isAmharic
-                                    ? 'የመደብር ማጣሪያ ቅንብር (መዝገብ ያላቸው)'
-                                    : 'Store Filter & Records',
+                              label: Text(
+                                _isAmharic ? 'የሽያጭ ሠራተኛ መዝግብ' : 'Add Sales',
                                 style: const TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 11.5,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _isAmharic
-                                ? 'በመደብር ገጽ ላይ የሚታየው መደብር (መዝገብ ያላቸው ብቻ ተለይተዋል)፦'
-                                : 'Active store filter for Store tab (only stores with existing records are shown):',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: isDark
-                                  ? const Color(0xFF94A3B8)
-                                  : const Color(0xFF64748B),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: isDark
-                                    ? const Color(0xFF334155)
-                                    : const Color(0xFFCBD5E1),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF16A34A),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
                               ),
-                              borderRadius: BorderRadius.circular(8),
-                              color: modalTheme.colorScheme.surface,
                             ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: (_selectedStoreId == 'all' ||
-                                        _stores.any(
-                                          (s) => s.id == _selectedStoreId,
-                                        ))
-                                    ? _selectedStoreId
-                                    : 'all',
-                                isExpanded: true,
-                                dropdownColor: modalTheme.colorScheme.surface,
-                                items: [
-                                  DropdownMenuItem(
-                                    value: 'all',
-                                    child: Text(
-                                      _isAmharic
-                                          ? 'ሁሉም መደብሮች'
-                                          : 'All Stores',
-                                    ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                Navigator.pop(ctx);
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const AdminUsersScreen(),
                                   ),
-                                  ..._stores.map(
-                                    (s) {
-                                      final hasRec = _storesWithRecords
-                                          .any((sw) => sw.id == s.id);
-                                      return DropdownMenuItem(
-                                        value: s.id,
-                                        child: Text(
-                                          hasRec
-                                              ? s.name
-                                              : '${s.name} (${_isAmharic ? 'ባዶ' : 'Empty'})',
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ],
-                                onChanged: (val) {
-                                  _onStoreChanged(val);
-                                  setStoreState(() {});
-                                  if (mounted) setState(() {});
-                                },
+                                );
+                                _loadStoresAndRecords();
+                              },
+                              icon: const Icon(Icons.people_outline, size: 15),
+                              label: Text(
+                                _isAmharic ? 'ሁሉንም አስተዳድር' : 'Manage All',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
                               ),
                             ),
                           ),
                         ],
                       ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(
-                    Icons.people_alt_outlined,
-                    color: Color(0xFF2563EB),
+                    ],
                   ),
-                  title: Text(
-                    _isAmharic
-                        ? 'የመደብሮችና ሠራተኞች አስተዳደር'
-                        : 'Manage Stores & Storekeepers',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  trailing: const Icon(Icons.chevron_right, size: 20),
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AdminUsersScreen(),
-                      ),
-                    );
-                    _loadStoresAndRecords();
-                  },
                 ),
               ],
             ],
           ),
         );
       },
+    );
+  }
+
+  Future<void> _openAddSalesUserDialog() async {
+    final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    String? selectedStore = _stores.isNotEmpty ? _stores.first.id : null;
+    bool isSaving = false;
+    String? errorMsg;
+
+    await showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            title: Row(
+              children: [
+                const Icon(
+                  Icons.point_of_sale_rounded,
+                  color: Color(0xFF16A34A),
+                  size: 22,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _isAmharic
+                      ? 'አዲስ የሽያጭ ሠራተኛ (Sales)'
+                      : 'Add New Salesperson',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (errorMsg != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        errorMsg!,
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: InputDecoration(
+                      labelText: _isAmharic ? 'ሙሉ ስም *' : 'Full Name *',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: InputDecoration(
+                      labelText: _isAmharic
+                          ? 'ስልክ ቁጥር (መግቢያ) *'
+                          : 'Phone Number (Login) *',
+                      hintText: '0911111111',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: passCtrl,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: _isAmharic ? 'የይለፍ ቃል *' : 'Password *',
+                      hintText: _isAmharic
+                          ? 'ቢያንስ 6 ፊደላት'
+                          : 'At least 6 characters',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedStore,
+                    decoration: InputDecoration(
+                      labelText: _isAmharic
+                          ? 'የሚሠራበት መደብር *'
+                          : 'Assigned Store *',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                    items: [
+                      for (final s in _stores)
+                        DropdownMenuItem(value: s.id, child: Text(s.name)),
+                    ],
+                    onChanged: (val) {
+                      setDlgState(() => selectedStore = val);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: Text(_isAmharic ? 'ሰርዝ' : 'Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF16A34A),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        final name = nameCtrl.text.trim();
+                        final phone = phoneCtrl.text.trim();
+                        final pass = passCtrl.text;
+                        if (name.isEmpty || phone.isEmpty || pass.length < 6) {
+                          setDlgState(
+                            () => errorMsg = _isAmharic
+                                ? 'እባክዎ ስም፣ ስልክ እና ቢያንስ 6 ፊደል የይለፍ ቃል ያስገቡ'
+                                : 'Enter name, phone and at least 6 characters password',
+                          );
+                          return;
+                        }
+                        if (selectedStore == null) {
+                          setDlgState(
+                            () => errorMsg = _isAmharic
+                                ? 'መደብር ይምረጡ'
+                                : 'Select a store',
+                          );
+                          return;
+                        }
+                        setDlgState(() {
+                          isSaving = true;
+                          errorMsg = null;
+                        });
+                        try {
+                          await ApiService.createUser(
+                            name: name,
+                            phone: phone,
+                            password: pass,
+                            storeId: selectedStore!,
+                            role: 'sales',
+                          );
+                          if (!mounted) return;
+                          Navigator.pop(dialogCtx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                _isAmharic
+                                    ? 'የሽያጭ ሠራተኛ "$name" በተሳካ ሁኔታ ተመዝግቧል!'
+                                    : 'Salesperson "$name" created successfully!',
+                              ),
+                              backgroundColor: const Color(0xFF16A34A),
+                            ),
+                          );
+                          _loadStoresAndRecords();
+                        } catch (e) {
+                          setDlgState(() {
+                            isSaving = false;
+                            errorMsg = e
+                                .toString()
+                                .replaceAll('Exception:', '')
+                                .trim();
+                          });
+                        }
+                      },
+                child: isSaving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : Text(_isAmharic ? 'መዝግብ' : 'Create Sales'),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -1659,7 +1797,7 @@ class _MainScreenState extends State<MainScreen> {
         : const Color(0xFFCBD5E1);
 
     final query = _searchQuery.trim().toLowerCase();
-    final filteredProducts = _inventoryProducts.where((p) {
+    final rawFiltered = _inventoryProducts.where((p) {
       if (_selectedStoreId != null &&
           _selectedStoreId != 'all' &&
           p.storeId != null &&
@@ -1673,11 +1811,137 @@ class _MainScreenState extends State<MainScreen> {
           (p.category.toLowerCase().contains(query));
     }).toList();
 
+    // Fix duplicate same names: Consolidate any duplicate products by name
+    final Map<String, InventoryProduct> mergedMap = {};
+    for (final p in rawFiltered) {
+      final key = p.productName.trim().toLowerCase();
+      if (!mergedMap.containsKey(key)) {
+        mergedMap[key] = p;
+      } else {
+        final exist = mergedMap[key]!;
+        final combinedQty = exist.currentQuantity + p.currentQuantity;
+        final latestPrice = p.unitPrice > 0 ? p.unitPrice : exist.unitPrice;
+        final latestSkPrice = p.storekeeperPrice > 0
+            ? p.storekeeperPrice
+            : exist.storekeeperPrice;
+        final effectivePcs = exist.pcsPerCarton > 0
+            ? exist.pcsPerCarton
+            : (p.pcsPerCarton > 0 ? p.pcsPerCarton : 1.0);
+        final combinedCartons = (combinedQty / effectivePcs).floorToDouble();
+        final combinedValue = combinedQty * latestPrice;
+        final latestCreated = (exist.createdAt != null && p.createdAt != null)
+            ? (p.createdAt!.isAfter(exist.createdAt!) ? p.createdAt : exist.createdAt)
+            : (exist.createdAt ?? p.createdAt);
+
+        mergedMap[key] = InventoryProduct(
+          id: exist.id,
+          storeId: exist.storeId ?? p.storeId,
+          productName: exist.productName,
+          sku: exist.sku,
+          category: exist.category,
+          baseUnit: exist.baseUnit,
+          quantityCartons: combinedCartons,
+          quantityPerCarton: effectivePcs,
+          totalQuantity: combinedQty,
+          unit: exist.unit,
+          pricePerPiece: latestPrice,
+          totalValue: combinedValue,
+          currentQuantity: combinedQty,
+          minimumStock:
+              exist.minimumStock > 0 ? exist.minimumStock : p.minimumStock,
+          unitPrice: latestPrice,
+          costPrice: exist.costPrice > 0 ? exist.costPrice : p.costPrice,
+          storekeeperPrice: latestSkPrice,
+          pcsPerCarton: effectivePcs,
+          supplierName: exist.supplierName ?? p.supplierName,
+          lastTransactionDate: p.lastTransactionDate ?? exist.lastTransactionDate,
+          description: exist.description ?? p.description,
+          createdBy: exist.createdBy,
+          updatedBy: p.updatedBy ?? exist.updatedBy,
+          isDeleted: false,
+          isActive: true,
+          createdAt: latestCreated,
+          updatedAt: DateTime.now(),
+        );
+      }
+    }
+    final filteredProducts = mergedMap.values.toList();
+
+    // Newly registered products at the TOP of the list!
+    filteredProducts.sort((a, b) {
+      final aDate = a.createdAt;
+      final bDate = b.createdAt;
+      if (aDate != null && bDate != null) {
+        return bDate.compareTo(aDate);
+      }
+      if (aDate != null) return -1;
+      if (bDate != null) return 1;
+      return 0;
+    });
+
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 85),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Store Filter Chips (matching Image 2)
+          if (_stores.isNotEmpty)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+              child: Row(
+                children: [
+                  ChoiceChip(
+                    label: Text(_isAmharic ? 'ሁሉም' : 'All Stores'),
+                    selected: _selectedStoreId == 'all' || _selectedStoreId == null,
+                    onSelected: (_) => _onStoreChanged('all'),
+                    selectedColor: const Color(0xFFDBEAFE),
+                    backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                    labelStyle: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: (_selectedStoreId == 'all' || _selectedStoreId == null)
+                          ? const Color(0xFF1D4ED8)
+                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(
+                        color: (_selectedStoreId == 'all' || _selectedStoreId == null)
+                            ? const Color(0xFF93C5FD)
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                      ),
+                    ),
+                  ),
+                  for (final s in _accessibleStores) ...[
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: Text(s.name),
+                      selected: _selectedStoreId == s.id,
+                      onSelected: (_) => _onStoreChanged(s.id),
+                      selectedColor: const Color(0xFFDBEAFE),
+                      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      labelStyle: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: _selectedStoreId == s.id
+                            ? const Color(0xFF1D4ED8)
+                            : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(
+                          color: _selectedStoreId == s.id
+                              ? const Color(0xFF93C5FD)
+                              : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
           // 1. Available Store Items Header Bar (Storekeeper gets "+ Add Item"; Admin is View Mode Only)
           Container(
             margin: const EdgeInsets.fromLTRB(14, 4, 14, 8),
@@ -1713,8 +1977,9 @@ class _MainScreenState extends State<MainScreen> {
                             : const Color(0xFF64748B),
                       ),
                     ),
-                    // Create (+ Add Item) is only for Storekeeper; Admin is View Mode Only
-                    if (!widget.currentUser.isAdmin) ...[
+                    // Create (+ Add Item) for Storekeeper & Sales
+                    if (widget.currentUser.isStorekeeper ||
+                        widget.currentUser.isSales) ...[
                       const SizedBox(width: 8),
                       InkWell(
                         onTap: _openNewProductDialog,
@@ -1796,8 +2061,9 @@ class _MainScreenState extends State<MainScreen> {
                           : const Color(0xFF64748B),
                     ),
                   ),
-                  // Register product in empty state is for Storekeeper only
-                  if (!widget.currentUser.isAdmin) ...[
+                  // Register product in empty state is for Storekeeper and Sales
+                  if (widget.currentUser.isStorekeeper ||
+                      widget.currentUser.isSales) ...[
                     const SizedBox(height: 10),
                     TextButton.icon(
                       onPressed: _openNewProductDialog,
@@ -1839,9 +2105,10 @@ class _MainScreenState extends State<MainScreen> {
         : const Color(0xFFCBD5E1);
 
     final unitPrice =
-        widget.currentUser.isStorekeeper && prod.storekeeperPrice > 0
-        ? prod.storekeeperPrice
-        : (prod.unitPrice > 0 ? prod.unitPrice : prod.costPrice);
+        (widget.currentUser.isStorekeeper || widget.currentUser.isSales) &&
+                prod.storekeeperPrice > 0
+            ? prod.storekeeperPrice
+            : (prod.unitPrice > 0 ? prod.unitPrice : prod.costPrice);
     final totalVal = prod.currentQuantity * unitPrice;
 
     return Container(
@@ -2071,7 +2338,7 @@ class _MainScreenState extends State<MainScreen> {
                                 horizontal: 4,
                               ),
                               child: Text(
-                                _isAmharic ? 'ዋጋ' : 'Price',
+                                _isAmharic ? 'የአንዱ ዋጋ' : 'Unit Price',
                                 textAlign: TextAlign.right,
                                 style: TextStyle(
                                   fontSize: 10.5,
@@ -2095,7 +2362,7 @@ class _MainScreenState extends State<MainScreen> {
                                 horizontal: 4,
                               ),
                               child: Text(
-                                _isAmharic ? 'ድምር' : 'Value',
+                                _isAmharic ? 'ድምር ዋጋ' : 'Total Value',
                                 textAlign: TextAlign.right,
                                 style: TextStyle(
                                   fontSize: 10.5,
@@ -2196,11 +2463,11 @@ class _MainScreenState extends State<MainScreen> {
                               NumberFormat('#,##0')
                                   .format(prod.currentQuantity.round()),
                               textAlign: TextAlign.center,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
                                 fontFamily: 'monospace',
-                                color: theme.colorScheme.onSurface,
+                                color: Color(0xFF16A34A),
                               ),
                             ),
                           ),
@@ -2220,11 +2487,11 @@ class _MainScreenState extends State<MainScreen> {
                               child: Text(
                                 _currencyFormat.format(unitPrice),
                                 textAlign: TextAlign.right,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w600,
                                   fontFamily: 'monospace',
-                                  color: theme.colorScheme.onSurface,
+                                  color: Color(0xFF2563EB),
                                 ),
                               ),
                             ),
@@ -2245,11 +2512,11 @@ class _MainScreenState extends State<MainScreen> {
                               child: Text(
                                 _currencyFormat.format(totalVal),
                                 textAlign: TextAlign.right,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
                                   fontFamily: 'monospace',
-                                  color: theme.colorScheme.onSurface,
+                                  color: Color(0xFFDC2626),
                                 ),
                               ),
                             ),
@@ -2286,21 +2553,19 @@ class _MainScreenState extends State<MainScreen> {
                               children: [
                                 TextSpan(
                                   text: _isAmharic ? 'ብር ' : 'ETB ',
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 9.5,
                                     fontWeight: FontWeight.w600,
-                                    color: isDark
-                                        ? const Color(0xFF94A3B8)
-                                        : const Color(0xFF64748B),
+                                    color: Color(0xFFDC2626),
                                   ),
                                 ),
                                 TextSpan(
                                   text: _currencyFormat.format(totalVal),
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w900,
                                     fontFamily: 'monospace',
-                                    color: theme.colorScheme.onSurface,
+                                    color: Color(0xFFDC2626),
                                   ),
                                 ),
                               ],
@@ -2314,8 +2579,8 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
 
-            // Card Footer: Action buttons (Storekeeper only; Admin is View Mode Only)
-            if (!widget.currentUser.isAdmin)
+            // Card Footer: Action buttons (Storekeeper and Sales)
+            if (widget.currentUser.isStorekeeper || widget.currentUser.isSales)
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -2852,7 +3117,7 @@ class _MainScreenState extends State<MainScreen> {
                               isPayment &&
                               (item.name.toLowerCase().contains('payment') ||
                                   item.name.isEmpty))
-                          ? (_isAmharic ? 'የብር ክፍያ' : 'Payment')
+                          ? (_isAmharic ? 'ደላላ የከፈለው ብር' : 'Delala Cash Payment')
                           : (rec.type == 'delala' &&
                                 item.sign == '+' &&
                                 bank != null &&
@@ -2860,7 +3125,7 @@ class _MainScreenState extends State<MainScreen> {
                                 (item.name.toLowerCase().contains('payment') ||
                                     item.name.toLowerCase().contains('cash') ||
                                     item.name.isEmpty))
-                          ? (_isAmharic ? 'የብር ውሰት' : 'Cash Borrow')
+                          ? (_isAmharic ? 'ደላላ የወሰደው ብር' : 'Delala Cash Taken')
                           : item.name;
 
                       return Container(
@@ -2993,7 +3258,7 @@ class _MainScreenState extends State<MainScreen> {
                               color: gridBorderColor,
                             ),
 
-                            // ዋጋ (Price)
+                            // ዋጋ (Price - dark neutral matching Image 4)
                             Expanded(
                               flex: 7,
                               child: Padding(
@@ -3007,7 +3272,9 @@ class _MainScreenState extends State<MainScreen> {
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                     fontFamily: 'monospace',
-                                    color: theme.colorScheme.onSurface,
+                                    color: isDark
+                                        ? const Color(0xFFCBD5E1)
+                                        : const Color(0xFF0F172A),
                                   ),
                                 ),
                               ),
@@ -3018,7 +3285,7 @@ class _MainScreenState extends State<MainScreen> {
                               color: gridBorderColor,
                             ),
 
-                            // ብዛት (Qty)
+                            // ብዛት (Qty - Blue matching Image 4)
                             Expanded(
                               flex: 5,
                               child: Padding(
@@ -3038,13 +3305,11 @@ class _MainScreenState extends State<MainScreen> {
                                                   : '+${item.quantity.toInt()}')
                                             : '${item.quantity.toInt()}'),
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700,
                                     fontFamily: 'monospace',
-                                    color: item.sign == '-'
-                                        ? const Color(0xFF16A34A)
-                                        : const Color(0xFFDC2626),
+                                    color: Color(0xFF2563EB),
                                   ),
                                 ),
                               ),
@@ -3055,7 +3320,7 @@ class _MainScreenState extends State<MainScreen> {
                               color: gridBorderColor,
                             ),
 
-                            // ድምር (Total)
+                            // ድምር (Total - Blue for goods/debit matching Image 4, Green for return/payment)
                             Expanded(
                               flex: 8,
                               child: Padding(
@@ -3075,7 +3340,7 @@ class _MainScreenState extends State<MainScreen> {
                                     fontFamily: 'monospace',
                                     color: item.sign == '-'
                                         ? const Color(0xFF16A34A)
-                                        : const Color(0xFFDC2626),
+                                        : const Color(0xFF2563EB),
                                   ),
                                 ),
                               ),
@@ -3148,14 +3413,14 @@ class _MainScreenState extends State<MainScreen> {
                     children: [
                       Text(
                         rec.type == 'delala'
-                            ? (_isAmharic ? 'ውሰት (+)' : 'Borrowed (+)')
+                            ? (_isAmharic ? 'ደላላ የወሰደው (+)' : 'Delala Took (+)')
                             : (rec.type == 'supplier'
                                   ? (_isAmharic
-                                        ? 'ግዢ (ክሬዲት +)'
-                                        : 'Purchase (Credit +)')
+                                        ? 'ግዢ (አቅራቢ +)'
+                                        : 'Purchase (+)')
                                   : (_isAmharic
-                                        ? 'ዕቃ (ዴቢት +)'
-                                        : 'Goods (Debit +)')),
+                                        ? 'ሽያጭ (ደንበኛ +)'
+                                        : 'Sale (+)')),
                         style: TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,
@@ -3172,7 +3437,7 @@ class _MainScreenState extends State<MainScreen> {
                               style: const TextStyle(
                                 fontSize: 9,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFFDC2626),
+                                color: Color(0xFF2563EB),
                               ),
                             ),
                             TextSpan(
@@ -3181,7 +3446,7 @@ class _MainScreenState extends State<MainScreen> {
                                 fontWeight: FontWeight.w900,
                                 fontSize: 11.5,
                                 fontFamily: 'monospace',
-                                color: Color(0xFFDC2626),
+                                color: Color(0xFF2563EB),
                               ),
                             ),
                           ],
@@ -3196,15 +3461,15 @@ class _MainScreenState extends State<MainScreen> {
                       Text(
                         rec.type == 'delala'
                             ? (_isAmharic
-                                  ? 'መልስ / ክፍያ (-)'
-                                  : 'Returned / Paid (-)')
+                                  ? 'ደላላ የከፈለው / የመለሰው (-)'
+                                  : 'Delala Paid / Returned (-)')
                             : (rec.type == 'supplier'
                                   ? (_isAmharic
-                                        ? 'ክፍያ (ዴቢት -)'
-                                        : 'Payment (Debit -)')
+                                        ? 'ለአቅራቢ የተከፈለ (-)'
+                                        : 'Paid to Supplier (-)')
                                   : (_isAmharic
-                                        ? 'ክፍያ (ክሬዲት -)'
-                                        : 'Payment (Credit -)')),
+                                        ? 'ከደንበኛ የተቀበልነው (-)'
+                                        : 'Customer Paid (-)')),
                         style: TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,
@@ -3319,24 +3584,87 @@ class _MainScreenState extends State<MainScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ValueListenableBuilder<String>(
-                    valueListenable: AppSettingsService.appTitleNotifier,
-                    builder: (context, title, _) {
-                      return Text(
-                        widget.currentUser.isStorekeeper
-                            ? _activeStoreLabel
-                            : title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: theme.colorScheme.onSurface,
-                          letterSpacing: -0.2,
+                  if (_currentTabIndex == 3 ||
+                      widget.currentUser.isStorekeeper ||
+                      widget.currentUser.isSales)
+                    Tooltip(
+                      message: _activeStoreLabel,
+                      child: Container(
+                        height: 28,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFCBD5E1),
+                          borderRadius: BorderRadius.circular(4),
                         ),
-                      );
-                    },
-                  ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: (_selectedStoreId == 'all' ||
+                                    _stores.any((s) => s.id == _selectedStoreId))
+                                ? _selectedStoreId
+                                : (_stores.isNotEmpty ? _stores.first.id : 'all'),
+                            isDense: true,
+                            isExpanded: true,
+                            dropdownColor:
+                                isDark ? const Color(0xFF1E293B) : Colors.white,
+                            icon: Icon(
+                              Icons.arrow_drop_down,
+                              size: 18,
+                              color: isDark
+                                  ? const Color(0xFFCBD5E1)
+                                  : const Color(0xFF475569),
+                            ),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color:
+                                  isDark ? Colors.white : const Color(0xFF0F172A),
+                            ),
+                            items: [
+                              DropdownMenuItem(
+                                value: 'all',
+                                child: Text(
+                                  _isAmharic ? 'ሁሉም መደብሮች' : 'All Stores',
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              ..._accessibleStores.map((s) => DropdownMenuItem(
+                                value: s.id,
+                                child: Text(
+                                  s.name,
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              )),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) {
+                                _onStoreChanged(val);
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    ValueListenableBuilder<String>(
+                      valueListenable: AppSettingsService.appTitleNotifier,
+                      builder: (context, title, _) {
+                        return Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: theme.colorScheme.onSurface,
+                            letterSpacing: -0.2,
+                          ),
+                        );
+                      },
+                    ),
                   Text(
                     _currentTabLabel,
                     style: TextStyle(
@@ -3378,8 +3706,9 @@ class _MainScreenState extends State<MainScreen> {
       ),
 
       // BOTTOM NAVIGATION TABS
-      // Admin: Customer, Supplier, Delala, Store. Storekeeper: Store only (no bottom bar needed).
-      bottomNavigationBar: widget.currentUser.isStorekeeper
+      // Admin: Customer, Supplier, Delala, Store. Storekeeper/Sales: Store only (no bottom bar needed).
+      bottomNavigationBar: (widget.currentUser.isStorekeeper ||
+              widget.currentUser.isSales)
           ? null
           : Container(
               decoration: BoxDecoration(
