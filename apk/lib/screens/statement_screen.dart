@@ -14,7 +14,7 @@ import '../services/api_service.dart';
 import '../services/language_service.dart';
 import '../services/app_settings_service.dart';
 import '../services/ethiopian_calendar.dart';
-import '../services/file_saver.dart';
+import '../services/telegram_share.dart';
 import '../widgets/telebirr_background.dart';
 
 class StatementScreen extends StatefulWidget {
@@ -102,63 +102,24 @@ class _StatementScreenState extends State<StatementScreen> {
     }
   }
 
-  /// Captures the complete branded statement card as a high-resolution PNG image and saves / shares it
-  Future<void> _captureTableScreenshot({bool share = true}) async {
-    try {
-      final boundary =
-          _tableKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary == null) return;
-      final image = await boundary.toImage(pixelRatio: 3.0);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) return;
-      final pngBytes = byteData.buffer.asUint8List();
-
-      final cleanName = widget.accountName.replaceAll(' ', '_');
-      final filename = 'statement-$cleanName.png';
-
-      await shareOrSaveImageBytes(
-        pngBytes,
-        filename,
-        title: '${widget.accountName} - Statement',
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _isAmharic
-                        ? 'የመግለጫው ምስል ($filename) በተሳካ ሁኔታ ተዘጋጅቷል/ተጋርቷል!'
-                        : 'Statement image ($filename) shared / saved successfully!',
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: const Color(0xFF16A34A),
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Screenshot capture: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  /// Opens social media sharing sheet: automatically captures the table screenshot and offers Telegram/Social share as an image, or Full PDF
-  Future<void> _shareStatement() async {
+  /// Automatically captures screenshot, auto-copies to clipboard, and auto-opens Telegram so user only selects recipient
+  Future<void> _sendToTelegram() async {
     if (_statement == null) return;
     final st = _statement!;
+    final customTitle = AppSettingsService.appTitleNotifier.value;
+    final displayName = st.storeName.isNotEmpty
+        ? st.storeName
+        : (customTitle.toLowerCase().contains('merkato') ||
+                customTitle.toLowerCase().contains('መርካቶ')
+            ? (_isAmharic ? 'መደብር' : 'Store')
+            : customTitle);
 
-    // Automatically capture high-resolution complete statement screenshot immediately
+    final dateDisplay = _isAmharic
+        ? EthiopianCalendar.formatDisplay(EthiopianCalendar.now(), lang: 'am')
+        : EthiopianCalendar.formatDisplay(EthiopianCalendar.now(), lang: 'en');
+    final timeDisplay = DateFormat('HH:mm').format(DateTime.now());
+
+    // 1. Automatically capture high-resolution complete statement screenshot immediately
     Uint8List? tableImageBytes;
     try {
       final boundary =
@@ -174,138 +135,76 @@ class _StatementScreenState extends State<StatementScreen> {
       debugPrint('Auto screenshot capture: $e');
     }
 
-    if (!mounted) return;
+    // 2. Build full formatted statement summary
+    final buffer = StringBuffer();
+    buffer.writeln('🏪 $displayName');
+    buffer.writeln('${_isAmharic ? "የሂሳብ ስም" : "Account"}: ${st.accountName} (${st.accountType.toUpperCase()})');
+    buffer.writeln('${_isAmharic ? "ቀን" : "Date"}: $dateDisplay ($timeDisplay)');
+    buffer.writeln('----------------------------------------');
+    buffer.writeln('${_isAmharic ? "የዕቃዎች ዝርዝር" : "ITEMS"}:');
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final isDark = Theme.of(ctx).brightness == Brightness.dark;
-        final cardColor = isDark ? const Color(0xFF1B2234) : Colors.white;
+    for (final entry in st.entries) {
+      final qtyStr = entry.quantity % 1 == 0
+          ? entry.quantity.toInt().toString()
+          : entry.quantity.toString();
+      final priceStr = _currencyFormat.format(entry.unitPrice);
+      if (entry.debit > 0) {
+        buffer.writeln('• ${entry.description}');
+        buffer.writeln('  $qtyStr x $priceStr = ${_currencyFormat.format(entry.debit)} ETB');
+      } else if (entry.credit > 0) {
+        final bankSuffix = entry.bank != null ? ' [${entry.bank}]' : '';
+        buffer.writeln('• ${entry.description}$bankSuffix');
+        buffer.writeln('  ${_currencyFormat.format(entry.credit)} ETB (${_isAmharic ? "ገቢ" : "Payment"})');
+      } else {
+        buffer.writeln('• ${entry.description}');
+      }
+    }
 
-        return Container(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    buffer.writeln('----------------------------------------');
+    buffer.writeln('${_isAmharic ? "ጠቅላላ ሂሳብ" : "Total Amount"}: ETB ${_currencyFormat.format(st.totals.totalDebit)}');
+    buffer.writeln('${_isAmharic ? "ጠቅላላ ገቢ (ክፍያ)" : "Total Payment (ገቢ)"}: ETB ${_currencyFormat.format(st.totals.totalCredit)}');
+    buffer.writeln('${_isAmharic ? "የተጣራ ቀሪ ሂሳብ" : "OUTSTANDING BALANCE"}: ETB ${_currencyFormat.format(st.totals.outstanding)}');
+
+    final text = buffer.toString();
+
+    // 3. Automatically copy text to clipboard
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+    } catch (_) {}
+
+    final cleanName = widget.accountName.replaceAll(' ', '_');
+    final filename = 'statement-$cleanName.png';
+
+    // 4. Automatically auto-copy screenshot, auto-share image and open Telegram (no option dialogs)
+    await autoShareStatementToTelegram(
+      imageBytes: tableImageBytes,
+      filename: filename,
+      messageText: text,
+      title: '${widget.accountName} - Statement',
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade400,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  const Icon(Icons.share_rounded, color: Color(0xFF2563EB), size: 22),
-                  const SizedBox(width: 8),
-                  Text(
-                    _isAmharic ? 'መግለጫውን ለቴሌግራም / ማህበራዊ ሚዲያ አጋራ' : 'Share to Telegram / Social Apps',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-
-              // 1. Share Automatically Captured Statement directly as a PNG Image
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2563EB).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.image_rounded, color: Color(0xFF2563EB), size: 22),
-                ),
-                title: Text(
-                  _isAmharic ? 'የሰንጠረዥ ምስል ለቴሌግራም/ዋትስአፕ አጋራ (PNG Image)' : 'Share Statement Image (PNG)',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                ),
-                subtitle: Text(
+              const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
                   _isAmharic
-                      ? 'ንጹሕ እና ሙሉ የሂሳብ መግለጫ ምስል በቀጥታ ይልካል'
-                      : 'Complete branded statement card image for Telegram/WhatsApp',
-                  style: const TextStyle(fontSize: 12),
+                      ? 'ስክሪንሾት እና መረጃው ተገልብጠዋል! ቴሌግራም ላይ ተጠቃሚውን ብቻ ይምረጡ'
+                      : 'Screenshot & info copied! Select recipient in Telegram...',
                 ),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  if (tableImageBytes != null) {
-                    final cleanName = st.accountName.replaceAll(' ', '_');
-                    final filename = 'statement-$cleanName.png';
-                    await shareOrSaveImageBytes(
-                      tableImageBytes,
-                      filename,
-                      title: '${st.accountName} - Statement',
-                    );
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Row(
-                            children: [
-                              const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _isAmharic
-                                      ? 'የመግለጫው ምስል ($filename) በተሳካ ሁኔታ ተጋርቷል/ወርዷል!'
-                                      : 'Statement image ($filename) shared / downloaded successfully!',
-                                ),
-                              ),
-                            ],
-                          ),
-                          backgroundColor: const Color(0xFF16A34A),
-                          duration: const Duration(seconds: 3),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    }
-                  } else {
-                    _captureTableScreenshot(share: true);
-                  }
-                },
-              ),
-
-              const Divider(height: 1),
-
-              // 2. Share Full Official PDF Document
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDC2626).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFFDC2626), size: 22),
-                ),
-                title: Text(
-                  _isAmharic ? 'ሙሉ ፒዲኤፍ ሰነድ አጋራ' : 'Share Full PDF Document',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                ),
-                subtitle: Text(
-                  _isAmharic
-                      ? 'የንግድ ሎጎ፣ ርዕስ እና ሙሉ የሂሳብ ዝርዝር የያዘ ፒዲኤፍ'
-                      : 'Complete official document with logo & header',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _printOrExportPdf(shareOnly: true);
-                },
               ),
             ],
           ),
-        );
-      },
-    );
+          backgroundColor: const Color(0xFF24A1DE),
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   void _startInlineEdit(int index, StatementEntry entry) {
@@ -643,9 +542,22 @@ class _StatementScreenState extends State<StatementScreen> {
       debugPrint('Google Fonts load error: $e');
     }
 
-    final pdf = pw.Document();
-    final logoBytes = AppSettingsService.getLogoBytes();
+    Uint8List? effectiveLogoBytes = AppSettingsService.getLogoBytes();
+    if (effectiveLogoBytes == null) {
+      try {
+        final byteData = await rootBundle.load('assets/app_icon.png');
+        effectiveLogoBytes = byteData.buffer.asUint8List();
+      } catch (_) {}
+    }
+
     final customTitle = AppSettingsService.appTitleNotifier.value;
+    final displayName = st.storeName.isNotEmpty
+        ? st.storeName
+        : (customTitle.toLowerCase().contains('merkato') ||
+                customTitle.toLowerCase().contains('መርካቶ')
+            ? (_isAmharic ? 'መደብር' : 'Store')
+            : customTitle);
+
     final dateDisplay = _isAmharic
         ? EthiopianCalendar.formatDisplay(EthiopianCalendar.now(), lang: 'am')
         : EthiopianCalendar.formatDisplay(EthiopianCalendar.now(), lang: 'en');
@@ -658,259 +570,467 @@ class _StatementScreenState extends State<StatementScreen> {
           )
         : null;
 
+    final pdf = pw.Document();
+
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        margin: const pw.EdgeInsets.all(20),
         theme: themeData,
-        footer: (context) {
-          return pw.Container(
-            margin: const pw.EdgeInsets.only(top: 16),
-            padding: const pw.EdgeInsets.only(top: 8),
-            decoration: const pw.BoxDecoration(
-              border: pw.Border(top: pw.BorderSide(color: PdfColors.grey300, width: 0.6)),
-            ),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Text(
-                  customTitle,
-                  style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500),
-                ),
-                pw.Text(
-                  'Page ${context.pageNumber} of ${context.pagesCount}',
-                  style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500),
-                ),
-              ],
-            ),
-          );
-        },
         build: (pw.Context context) {
           return [
-            // Elegant Header Bar
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    if (logoBytes != null) ...[
-                      pw.Container(
-                        width: 44,
-                        height: 44,
-                        margin: const pw.EdgeInsets.only(right: 12),
-                        decoration: pw.BoxDecoration(
-                          borderRadius: pw.BorderRadius.circular(8),
-                          border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
-                        ),
-                        child: pw.ClipRRect(
-                          horizontalRadius: 7,
-                          verticalRadius: 7,
-                          child: pw.Image(pw.MemoryImage(logoBytes), fit: pw.BoxFit.cover),
-                        ),
+            // Exact Replica of In-App Card Container
+            pw.Container(
+              padding: const pw.EdgeInsets.all(14),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.white,
+                borderRadius: pw.BorderRadius.circular(10),
+                border: pw.Border.all(
+                  color: const PdfColor.fromInt(0xFFCBD5E1),
+                  width: 1.2,
+                ),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  // 1. Top Header Row (Logo + Store Name + Date & Currency Pill)
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.center,
+                        children: [
+                          if (effectiveLogoBytes != null)
+                            pw.Container(
+                              width: 38,
+                              height: 38,
+                              margin: const pw.EdgeInsets.only(right: 8),
+                              decoration: pw.BoxDecoration(
+                                borderRadius: pw.BorderRadius.circular(6),
+                              ),
+                              child: pw.ClipRRect(
+                                horizontalRadius: 6,
+                                verticalRadius: 6,
+                                child: pw.Image(
+                                  pw.MemoryImage(effectiveLogoBytes),
+                                  fit: pw.BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                          pw.Text(
+                            displayName,
+                            style: pw.TextStyle(
+                              fontSize: 16,
+                              fontWeight: pw.FontWeight.bold,
+                              color: const PdfColor.fromInt(0xFF1E293B),
+                            ),
+                          ),
+                        ],
+                      ),
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.end,
+                        children: [
+                          pw.Text(
+                            '$dateDisplay ($timeDisplay)',
+                            style: const pw.TextStyle(
+                              fontSize: 9.5,
+                              color: PdfColor.fromInt(0xFF475569),
+                            ),
+                          ),
+                          pw.SizedBox(height: 3),
+                          pw.Container(
+                            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: pw.BoxDecoration(
+                              color: const PdfColor.fromInt(0xFFF1F5F9),
+                              borderRadius: pw.BorderRadius.circular(4),
+                              border: pw.Border.all(
+                                color: const PdfColor.fromInt(0xFFCBD5E1),
+                                width: 0.8,
+                              ),
+                            ),
+                            child: pw.Text(
+                              'Currency: ETB',
+                              style: pw.TextStyle(
+                                fontSize: 8.5,
+                                fontWeight: pw.FontWeight.bold,
+                                color: const PdfColor.fromInt(0xFF1E293B),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  ),
+                  pw.SizedBox(height: 8),
+
+                  // 2. Blue Account Banner
+                  pw.Container(
+                    padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: pw.BoxDecoration(
+                      color: const PdfColor.fromInt(0xFFEFF6FF),
+                      borderRadius: pw.BorderRadius.circular(6),
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
                         pw.Text(
-                          customTitle,
+                          '${_isAmharic ? 'የሂሳብ ስም' : 'Account'}: ${st.accountName}',
                           style: pw.TextStyle(
-                            fontSize: 18,
+                            fontSize: 11,
                             fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.blueGrey900,
+                            color: const PdfColor.fromInt(0xFF2563EB),
                           ),
                         ),
-                        pw.SizedBox(height: 3),
                         pw.Text(
-                          st.storeName.isEmpty
-                              ? (_isAmharic ? 'የሂሳብ መግለጫ' : 'Account Statement')
-                              : '${st.storeName} · ${_isAmharic ? 'የሂሳብ መግለጫ' : 'Account Statement'}',
-                          style: const pw.TextStyle(
+                          st.accountType.toUpperCase(),
+                          style: pw.TextStyle(
                             fontSize: 9.5,
-                            color: PdfColors.blueGrey600,
-                          ),
-                        ),
-                        pw.SizedBox(height: 5),
-                        pw.Container(
-                          padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: pw.BoxDecoration(
-                            color: PdfColors.blue50,
-                            borderRadius: pw.BorderRadius.circular(4),
-                            border: pw.Border.all(color: PdfColors.blue200, width: 0.6),
-                          ),
-                          child: pw.Text(
-                            '${_isAmharic ? 'የሂሳብ ስም' : 'Account'}: ${st.accountName} (${st.accountType.toUpperCase()})',
-                            style: pw.TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.blue900,
-                            ),
+                            fontWeight: pw.FontWeight.bold,
+                            color: const PdfColor.fromInt(0xFF2563EB),
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ),
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Text(
-                      _isAmharic ? 'ቀን፦ $dateDisplay ($timeDisplay)' : 'Date: $dateDisplay ($timeDisplay)',
-                      style: const pw.TextStyle(
-                        fontSize: 9,
-                        color: PdfColors.grey700,
-                      ),
-                    ),
-                    pw.SizedBox(height: 6),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3.5,
-                      ),
-                      decoration: pw.BoxDecoration(
-                        color: PdfColors.grey100,
-                        borderRadius: pw.BorderRadius.circular(4),
-                        border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
-                      ),
-                      child: pw.Text(
-                        'Currency: ETB',
-                        style: pw.TextStyle(
-                          fontSize: 8.5,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.grey800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            pw.SizedBox(height: 14),
-            pw.Divider(thickness: 0.8, color: PdfColors.grey300),
-            pw.SizedBox(height: 10),
-
-            // Excel-style Statement Table
-            pw.TableHelper.fromTextArray(
-              headers: [
-                _isAmharic ? 'ቀን' : 'Date',
-                _isAmharic ? 'የዕቃው ዝርዝር' : 'Item Description',
-                _isAmharic ? 'ብዛት x ዋጋ' : 'Qty x Price',
-                _isAmharic ? 'ተቀባይ (+)' : 'Debit (+)',
-                _isAmharic ? 'ተከፋይ (-)' : 'Credit (-)',
-              ],
-              headerStyle: pw.TextStyle(
-                fontWeight: pw.FontWeight.bold,
-                fontSize: 9,
-                color: PdfColors.white,
-              ),
-              headerDecoration: const pw.BoxDecoration(
-                color: PdfColor.fromInt(0xFF1E293B),
-              ),
-              cellStyle: const pw.TextStyle(fontSize: 8.5),
-              cellAlignment: pw.Alignment.centerLeft,
-              cellAlignments: {
-                0: pw.Alignment.centerLeft,
-                1: pw.Alignment.centerLeft,
-                2: pw.Alignment.centerRight,
-                3: pw.Alignment.centerRight,
-                4: pw.Alignment.centerRight,
-              },
-              headerPadding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 7),
-              cellPadding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 6),
-              rowDecoration: const pw.BoxDecoration(
-                border: pw.Border(
-                  bottom: pw.BorderSide(color: PdfColors.grey200, width: 0.6),
-                ),
-              ),
-              oddRowDecoration: const pw.BoxDecoration(
-                color: PdfColor.fromInt(0xFFF8FAFC),
-                border: pw.Border(
-                  bottom: pw.BorderSide(color: PdfColors.grey200, width: 0.6),
-                ),
-              ),
-              data: st.entries.map((entry) {
-                final qtyPrice = (entry.quantity > 0 && entry.unitPrice > 0)
-                    ? '${entry.quantity % 1 == 0 ? entry.quantity.toInt().toString() : entry.quantity.toString()} pcs x ${_currencyFormat.format(entry.unitPrice)}'
-                    : '-';
-                return [
-                  _formatEthiopianDate(entry.date),
-                  entry.description + (entry.bank != null ? ' [${entry.bank}]' : ''),
-                  qtyPrice,
-                  entry.debit > 0 ? _currencyFormat.format(entry.debit) : '-',
-                  entry.credit > 0 ? _currencyFormat.format(entry.credit) : '-',
-                ];
-              }).toList(),
-            ),
-            pw.SizedBox(height: 12),
-
-            // Modern Statement Totals Box
-            pw.Container(
-              padding: const pw.EdgeInsets.all(12),
-              decoration: pw.BoxDecoration(
-                color: PdfColors.grey50,
-                borderRadius: pw.BorderRadius.circular(6),
-                border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
-              ),
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        _isAmharic
-                            ? 'ጠቅላላ ግብይቶች (${st.entries.length} መዝገቦች)'
-                            : 'TOTALS (${st.entries.length} entries)',
-                        style: pw.TextStyle(
-                          fontWeight: pw.FontWeight.bold,
-                          fontSize: 10,
-                          color: PdfColors.blueGrey800,
-                        ),
-                      ),
-                      pw.SizedBox(height: 5),
-                      pw.Text(
-                        '${_isAmharic ? 'ጠቅላላ ተቀባይ' : 'Total Debit'}: ETB ${_currencyFormat.format(st.totals.totalDebit)}',
-                        style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700),
-                      ),
-                      pw.SizedBox(height: 2),
-                      pw.Text(
-                        '${_isAmharic ? 'ጠቅላላ ተከፋይ' : 'Total Credit'}: ETB ${_currencyFormat.format(st.totals.totalCredit)}',
-                        style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700),
-                      ),
-                    ],
                   ),
+                  pw.SizedBox(height: 10),
+
+                  // 3. Exactly 4-Column Table Matching In-App Preview
                   pw.Container(
-                    padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: pw.BoxDecoration(
-                      color: st.totals.outstanding > 0 ? const PdfColor.fromInt(0xFFFEF2F2) : const PdfColor.fromInt(0xFFF0FDF4),
-                      borderRadius: pw.BorderRadius.circular(6),
+                      color: PdfColors.white,
+                      borderRadius: pw.BorderRadius.circular(7),
                       border: pw.Border.all(
-                        color: st.totals.outstanding > 0 ? const PdfColor.fromInt(0xFFFCA5A5) : const PdfColor.fromInt(0xFF86EFAC),
+                        color: const PdfColor.fromInt(0xFFCBD5E1),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: pw.ClipRRect(
+                      horizontalRadius: 6,
+                      verticalRadius: 6,
+                      child: pw.Column(
+                        children: [
+                          // Table Header
+                          pw.Container(
+                            padding: const pw.EdgeInsets.symmetric(vertical: 6),
+                            color: const PdfColor.fromInt(0xFFF1F5F9),
+                            child: pw.Row(
+                              children: [
+                                pw.Expanded(
+                                  flex: 8,
+                                  child: pw.Padding(
+                                    padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+                                    child: pw.Text(
+                                      _isAmharic ? 'ቀን' : 'Date',
+                                      style: pw.TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: pw.FontWeight.bold,
+                                        color: const PdfColor.fromInt(0xFF1E293B),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                pw.Expanded(
+                                  flex: 15,
+                                  child: pw.Padding(
+                                    padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+                                    child: pw.Text(
+                                      _isAmharic ? 'ዕቃ' : 'Item',
+                                      style: pw.TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: pw.FontWeight.bold,
+                                        color: const PdfColor.fromInt(0xFF1E293B),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                pw.Expanded(
+                                  flex: 7,
+                                  child: pw.Padding(
+                                    padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+                                    child: pw.Text(
+                                      _isAmharic ? 'ጠቅላላ (+)' : 'Total (+)',
+                                      textAlign: pw.TextAlign.right,
+                                      style: pw.TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: pw.FontWeight.bold,
+                                        color: const PdfColor.fromInt(0xFF1E293B),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                pw.Expanded(
+                                  flex: 7,
+                                  child: pw.Padding(
+                                    padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+                                    child: pw.Text(
+                                      _isAmharic ? 'ገቢ (-)' : 'Payment (-)',
+                                      textAlign: pw.TextAlign.right,
+                                      style: pw.TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: pw.FontWeight.bold,
+                                        color: const PdfColor.fromInt(0xFF1E293B),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          pw.Divider(height: 1, thickness: 1, color: const PdfColor.fromInt(0xFFCBD5E1)),
+
+                          // Table Rows
+                          ...st.entries.asMap().entries.map((itemMap) {
+                            final idx = itemMap.key;
+                            final entry = itemMap.value;
+                            final isEven = idx % 2 == 0;
+                            final rowBg = isEven ? PdfColors.white : const PdfColor.fromInt(0xFFF8FAFC);
+                            final qtyStr = entry.quantity % 1 == 0
+                                ? entry.quantity.toInt().toString()
+                                : entry.quantity.toString();
+
+                            return pw.Container(
+                              color: rowBg,
+                              padding: const pw.EdgeInsets.symmetric(vertical: 6),
+                              child: pw.Row(
+                                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                                children: [
+                                  // Col 1: Date
+                                  pw.Expanded(
+                                    flex: 8,
+                                    child: pw.Padding(
+                                      padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+                                      child: pw.Text(
+                                        _formatEthiopianDate(entry.date),
+                                        style: const pw.TextStyle(
+                                          fontSize: 8.5,
+                                          color: PdfColor.fromInt(0xFF475569),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  // Col 2: Item Description + Qty x Price (NO "pcs"!)
+                                  pw.Expanded(
+                                    flex: 15,
+                                    child: pw.Padding(
+                                      padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+                                      child: pw.Column(
+                                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                        children: [
+                                          pw.Text(
+                                            entry.description,
+                                            style: pw.TextStyle(
+                                              fontSize: 9.5,
+                                              fontWeight: pw.FontWeight.bold,
+                                              color: const PdfColor.fromInt(0xFF1E293B),
+                                            ),
+                                          ),
+                                          if (entry.quantity > 0 && entry.unitPrice > 0)
+                                            pw.Padding(
+                                              padding: const pw.EdgeInsets.only(top: 2),
+                                              child: pw.Text(
+                                                '$qtyStr x ${_currencyFormat.format(entry.unitPrice)}',
+                                                style: const pw.TextStyle(
+                                                  fontSize: 8,
+                                                  color: PdfColor.fromInt(0xFF64748B),
+                                                ),
+                                              ),
+                                            )
+                                          else if (entry.bank != null)
+                                            pw.Padding(
+                                              padding: const pw.EdgeInsets.only(top: 2),
+                                              child: pw.Text(
+                                                '[${entry.bank}]',
+                                                style: pw.TextStyle(
+                                                  fontSize: 8,
+                                                  fontWeight: pw.FontWeight.bold,
+                                                  color: const PdfColor.fromInt(0xFF64748B),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  // Col 3: Total (+)
+                                  pw.Expanded(
+                                    flex: 7,
+                                    child: pw.Padding(
+                                      padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+                                      child: pw.Text(
+                                        entry.debit > 0 ? _currencyFormat.format(entry.debit) : '-',
+                                        textAlign: pw.TextAlign.right,
+                                        style: pw.TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: pw.FontWeight.bold,
+                                          color: entry.debit > 0
+                                              ? const PdfColor.fromInt(0xFFDC2626)
+                                              : const PdfColor.fromInt(0xFF94A3B8),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  // Col 4: Payment (-)
+                                  pw.Expanded(
+                                    flex: 7,
+                                    child: pw.Padding(
+                                      padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+                                      child: pw.Text(
+                                        entry.credit > 0 ? _currencyFormat.format(entry.credit) : '-',
+                                        textAlign: pw.TextAlign.right,
+                                        style: pw.TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: pw.FontWeight.bold,
+                                          color: entry.credit > 0
+                                              ? const PdfColor.fromInt(0xFF16A34A)
+                                              : const PdfColor.fromInt(0xFF94A3B8),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+
+                          pw.Divider(height: 1, thickness: 1, color: const PdfColor.fromInt(0xFFCBD5E1)),
+
+                          // Total Footer Row
+                          pw.Container(
+                            padding: const pw.EdgeInsets.symmetric(vertical: 7),
+                            color: const PdfColor.fromInt(0xFFF1F5F9),
+                            child: pw.Row(
+                              children: [
+                                pw.Expanded(
+                                  flex: 23,
+                                  child: pw.Padding(
+                                    padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+                                    child: pw.Text(
+                                      _isAmharic ? 'ጠቅላላ ድምር (ብር)' : 'TOTAL (ETB)',
+                                      style: pw.TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: pw.FontWeight.bold,
+                                        color: const PdfColor.fromInt(0xFF1E293B),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                pw.Expanded(
+                                  flex: 7,
+                                  child: pw.Padding(
+                                    padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+                                    child: pw.Text(
+                                      _currencyFormat.format(st.totals.totalDebit),
+                                      textAlign: pw.TextAlign.right,
+                                      style: pw.TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: pw.FontWeight.bold,
+                                        color: const PdfColor.fromInt(0xFFDC2626),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                pw.Expanded(
+                                  flex: 7,
+                                  child: pw.Padding(
+                                    padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+                                    child: pw.Text(
+                                      _currencyFormat.format(st.totals.totalCredit),
+                                      textAlign: pw.TextAlign.right,
+                                      style: pw.TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: pw.FontWeight.bold,
+                                        color: const PdfColor.fromInt(0xFF16A34A),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+
+                  // 4. Totals Summary Card
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(12),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.white,
+                      borderRadius: pw.BorderRadius.circular(8),
+                      border: pw.Border.all(
+                        color: const PdfColor.fromInt(0xFFE2E8F0),
                         width: 1,
                       ),
                     ),
                     child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
                       children: [
-                        pw.Text(
-                          _isAmharic ? 'የተጣራ ቀሪ ሂሳብ' : 'OUTSTANDING BALANCE',
-                          style: pw.TextStyle(
-                            fontSize: 8.5,
-                            fontWeight: pw.FontWeight.bold,
-                            color: st.totals.outstanding > 0 ? PdfColors.red900 : PdfColors.green900,
-                          ),
+                        pw.Row(
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            pw.Text(
+                              _isAmharic ? 'ጠቅላላ ሂሳብ፦' : 'Total Amount:',
+                              style: const pw.TextStyle(
+                                fontSize: 10,
+                                color: PdfColor.fromInt(0xFF64748B),
+                              ),
+                            ),
+                            pw.Text(
+                              'ETB ${_currencyFormat.format(st.totals.totalDebit)}',
+                              style: pw.TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: pw.FontWeight.bold,
+                                color: const PdfColor.fromInt(0xFFDC2626),
+                              ),
+                            ),
+                          ],
                         ),
-                        pw.SizedBox(height: 3),
-                        pw.Text(
-                          'ETB ${_currencyFormat.format(st.totals.outstanding)}',
-                          style: pw.TextStyle(
-                            fontSize: 13,
-                            fontWeight: pw.FontWeight.bold,
-                            color: st.totals.outstanding > 0 ? const PdfColor.fromInt(0xFFDC2626) : const PdfColor.fromInt(0xFF16A34A),
-                          ),
+                        pw.SizedBox(height: 6),
+                        pw.Row(
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            pw.Text(
+                              _isAmharic ? 'ጠቅላላ ገቢ (ክፍያ)፦' : 'Total Payment (ገቢ):',
+                              style: const pw.TextStyle(
+                                fontSize: 10,
+                                color: PdfColor.fromInt(0xFF64748B),
+                              ),
+                            ),
+                            pw.Text(
+                              'ETB ${_currencyFormat.format(st.totals.totalCredit)}',
+                              style: pw.TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: pw.FontWeight.bold,
+                                color: const PdfColor.fromInt(0xFF16A34A),
+                              ),
+                            ),
+                          ],
+                        ),
+                        pw.Divider(height: 14, thickness: 0.8, color: const PdfColor.fromInt(0xFFE2E8F0)),
+                        pw.Row(
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            pw.Text(
+                              _isAmharic ? 'የተጣራ ቀሪ ሂሳብ፦' : 'OUTSTANDING BALANCE:',
+                              style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.bold,
+                                color: const PdfColor.fromInt(0xFF1E293B),
+                              ),
+                            ),
+                            pw.Text(
+                              'ETB ${_currencyFormat.format(st.totals.outstanding)}',
+                              style: pw.TextStyle(
+                                fontSize: 13,
+                                fontWeight: pw.FontWeight.bold,
+                                color: st.totals.outstanding > 0
+                                    ? const PdfColor.fromInt(0xFFDC2626)
+                                    : const PdfColor.fromInt(0xFF16A34A),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -966,18 +1086,21 @@ class _StatementScreenState extends State<StatementScreen> {
           if (_statement != null) ...[
             // 1. Export / Print PDF Statement
             IconButton(
-              icon: const Icon(Icons.print_outlined, size: 20),
+              icon: const Icon(Icons.print_outlined, size: 21),
               tooltip: _isAmharic ? 'መግለጫ አትም / ፒዲኤፍ' : 'Print / Export PDF',
               onPressed: () => _printOrExportPdf(shareOnly: false),
             ),
 
-            // 2. Share Menu (Camera/Screenshot & PDF merged into 1 one-click action)
-            IconButton(
-              icon: const Icon(Icons.share_outlined, size: 20),
-              tooltip: _isAmharic
-                  ? 'ምስል አንሳና ለቴሌግራም/ዋትስአፕ አጋራ'
-                  : 'Capture & Share Statement',
-              onPressed: _shareStatement,
+            // 2. Telegram Send Button (Replaces Share button, directly sends statement info to Telegram)
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: IconButton(
+                icon: const TelegramIconWidget(size: 24),
+                tooltip: _isAmharic
+                    ? 'መረጃውን በቴሌግራም ላክ'
+                    : 'Send Statement Info to Telegram',
+                onPressed: _sendToTelegram,
+              ),
             ),
           ],
         ],
@@ -1006,109 +1129,141 @@ class _StatementScreenState extends State<StatementScreen> {
   Widget _buildStatementShareHeader(AccountStatement st) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final customTitle = AppSettingsService.appTitleNotifier.value;
     final dateDisplay = _isAmharic
         ? EthiopianCalendar.formatDisplay(EthiopianCalendar.now(), lang: 'am')
         : EthiopianCalendar.formatDisplay(EthiopianCalendar.now(), lang: 'en');
     final timeDisplay = DateFormat('HH:mm').format(DateTime.now());
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return ValueListenableBuilder<String>(
+      valueListenable: AppSettingsService.appTitleNotifier,
+      builder: (context, customTitle, _) {
+        final displayName = st.storeName.isNotEmpty
+            ? st.storeName
+            : (customTitle.toLowerCase().contains('merkato') ||
+                    customTitle.toLowerCase().contains('መርካቶ')
+                ? (_isAmharic ? 'መደብር' : 'Store')
+                : customTitle);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AppSettingsService.buildLogoWidget(size: 36),
-                const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Row(
                   children: [
+                    GestureDetector(
+                      onTap: () async {
+                        final success =
+                            await AppSettingsService.pickAndSaveLogo();
+                        if (success && mounted) {
+                          setState(() {});
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                _isAmharic
+                                    ? 'የመደብር ሎጎ በተሳካ ሁኔታ ተቀይሯል!'
+                                    : 'Store logo updated successfully!',
+                              ),
+                              backgroundColor: const Color(0xFF16A34A),
+                            ),
+                          );
+                        }
+                      },
+                      child: Tooltip(
+                        message: _isAmharic
+                            ? 'የመደብሩን ሎጎ ለመቀየር ይንኩ'
+                            : 'Tap to change store logo image',
+                        child: AppSettingsService.buildLogoWidget(size: 36),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     Text(
-                      customTitle,
+                      displayName,
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
                         color: theme.colorScheme.onSurface,
                       ),
                     ),
-                    if (st.storeName.isNotEmpty) ...[
-                      const SizedBox(height: 1),
-                      Text(
-                        st.storeName,
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '$dateDisplay ($timeDisplay)',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF475569),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFCBD5E1),
+                          width: 0.8,
                         ),
                       ),
-                    ],
+                      child: const Text(
+                        'Currency: ETB',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ],
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '$dateDisplay ($timeDisplay)',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
-                      width: 0.8,
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${_isAmharic ? 'የሂሳብ ስም' : 'Account'}: ${st.accountName}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2563EB),
                     ),
                   ),
-                  child: const Text(
-                    'Currency: ETB',
-                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold),
+                  Text(
+                    st.accountType.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2563EB),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
-        ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          decoration: BoxDecoration(
-            color: const Color(0xFF2563EB).withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '${_isAmharic ? 'የሂሳብ ስም' : 'Account'}: ${st.accountName}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF2563EB),
-                ),
-              ),
-              Text(
-                st.accountType.toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF2563EB),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -1242,7 +1397,7 @@ class _StatementScreenState extends State<StatementScreen> {
                       child: Text(
                         isStock
                             ? (_isAmharic ? 'ገቢ (+)' : 'Stock In (+)')
-                            : (_isAmharic ? 'ተቀባይ (+)' : 'Debit (+)'),
+                            : (_isAmharic ? 'ጠቅላላ (+)' : 'Total (+)'),
                         textAlign: TextAlign.right,
                         style: TextStyle(
                           color: isDark
@@ -1261,7 +1416,7 @@ class _StatementScreenState extends State<StatementScreen> {
                       child: Text(
                         isStock
                             ? (_isAmharic ? 'ወጪ (-)' : 'Stock Out (-)')
-                            : (_isAmharic ? 'ተከፋይ (-)' : 'Credit (-)'),
+                            : (_isAmharic ? 'ገቢ (-)' : 'Payment (-)'),
                         textAlign: TextAlign.right,
                         style: TextStyle(
                           color: isDark
@@ -1364,7 +1519,7 @@ class _StatementScreenState extends State<StatementScreen> {
                                   Padding(
                                     padding: const EdgeInsets.only(top: 2),
                                     child: Text(
-                                      '${entry.quantity.toInt()} pcs x ${_currencyFormat.format(entry.unitPrice)}',
+                                      '${entry.quantity % 1 == 0 ? entry.quantity.toInt() : entry.quantity} x ${_currencyFormat.format(entry.unitPrice)}',
                                       style: TextStyle(
                                         fontSize: 9.5,
                                         color: isDark
@@ -1552,7 +1707,7 @@ class _StatementScreenState extends State<StatementScreen> {
     );
   }
 
-  /// Totals Card matching the Excel reference photo
+  /// Totals Card matching the reference design
   Widget _buildExcelTotalsCard(AccountStatement st) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -1573,7 +1728,7 @@ class _StatementScreenState extends State<StatementScreen> {
               Text(
                 isStock
                     ? (_isAmharic ? 'ጠቅላላ ገቢ ዕቃ፦' : 'Total Stock In:')
-                    : (_isAmharic ? 'ጠቅላላ ተቀባይ፦' : 'Total Debit:'),
+                    : (_isAmharic ? 'ጠቅላላ ሂሳብ፦' : 'Total Amount:'),
                 style: TextStyle(
                   fontSize: 11,
                   color: isDark
@@ -1599,8 +1754,8 @@ class _StatementScreenState extends State<StatementScreen> {
                 isStock
                     ? (_isAmharic ? 'ጠቅላላ ወጪ ዕቃ፦' : 'Total Stock Out:')
                     : (_isAmharic
-                          ? 'ጠቅላላ ተከፋይ (ክፍያዎች)፦'
-                          : 'Total Credit (Payments):'),
+                          ? 'ጠቅላላ ገቢ (ክፍያ)፦'
+                          : 'Total Payment (ገቢ):'),
                 style: TextStyle(
                   fontSize: 11,
                   color: isDark
@@ -1650,4 +1805,56 @@ class _StatementScreenState extends State<StatementScreen> {
       ),
     );
   }
+}
+
+class TelegramIconWidget extends StatelessWidget {
+  final double size;
+  const TelegramIconWidget({super.key, this.size = 24});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        color: Color(0xFF24A1DE), // Telegram brand blue
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: CustomPaint(
+          size: Size(size * 0.60, size * 0.60),
+          painter: _TelegramPlanePainter(),
+        ),
+      ),
+    );
+  }
+}
+
+class _TelegramPlanePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+
+    final w = size.width;
+    final h = size.height;
+
+    final path = Path();
+    path.moveTo(w * 0.12, h * 0.48);
+    path.lineTo(w * 0.92, h * 0.14);
+    path.lineTo(w * 0.74, h * 0.88);
+    path.lineTo(w * 0.48, h * 0.68);
+    path.lineTo(w * 0.38, h * 0.78);
+    path.lineTo(w * 0.36, h * 0.60);
+    path.lineTo(w * 0.76, h * 0.28);
+    path.lineTo(w * 0.28, h * 0.54);
+    path.close();
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

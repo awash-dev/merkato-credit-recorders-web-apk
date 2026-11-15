@@ -32,6 +32,7 @@ dependencies:
   printing: ^5.15.1
   et_date_picker: ^0.0.4
   image_picker: ^1.2.4
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:
