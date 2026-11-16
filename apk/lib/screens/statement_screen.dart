@@ -982,7 +982,7 @@ class _StatementScreenState extends State<StatementScreen> {
                               style: pw.TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: pw.FontWeight.bold,
-                                color: const PdfColor.fromInt(0xFFDC2626),
+                                color: const PdfColor.fromInt(0xFFD97706),
                               ),
                             ),
                           ],
@@ -1742,7 +1742,7 @@ class _StatementScreenState extends State<StatementScreen> {
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFFDC2626),
+                  color: Color(0xFFD97706),
                 ),
               ),
             ],

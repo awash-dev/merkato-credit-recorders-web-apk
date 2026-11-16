@@ -781,14 +781,14 @@ class _MainScreenState extends State<MainScreen> {
       }
       final netBalance = totalDebit - totalCredit;
 
-      // Card 1: Invoiced (Debit -> Red matching Image 3)
+      // Card 1: Invoiced (Debit -> Amber / Yellow distinct from Balance Red)
       card1 = _buildTopGridCard(
         isDark: isDark,
         title: _isAmharic ? 'ኢንቮይስ' : 'Invoiced',
         mainValue: _currencyFormat.format(totalDebit),
         currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
         subtitle: _isAmharic ? 'ዴቢት' : 'Debit',
-        valueColor: const Color(0xFFDC2626),
+        valueColor: const Color(0xFFD97706),
       );
 
       // Card 2: Received (Income -> Green)
@@ -828,14 +828,14 @@ class _MainScreenState extends State<MainScreen> {
       }
       final netBalance = totalDebit - totalCredit;
 
-      // Card 1: Invoiced (Debit -> Red matching Image 3)
+      // Card 1: Invoiced (Debit -> Amber / Yellow distinct from Balance Red)
       card1 = _buildTopGridCard(
         isDark: isDark,
         title: _isAmharic ? 'ኢንቮይስ' : 'Invoiced',
         mainValue: _currencyFormat.format(totalDebit),
         currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
         subtitle: _isAmharic ? 'ዴቢት' : 'Debit',
-        valueColor: const Color(0xFFDC2626),
+        valueColor: const Color(0xFFD97706),
       );
 
       // Card 2: Received (Income -> Green)
@@ -889,14 +889,14 @@ class _MainScreenState extends State<MainScreen> {
       }
       final netBalance = totalBorrowedPrice - totalSettledPrice;
 
-      // Card 1: Invoiced (Borrowed goods / Debit -> Red matching Image 3)
+      // Card 1: Invoiced (Borrowed goods / Debit -> Amber / Yellow #D97706)
       card1 = _buildTopGridCard(
         isDark: isDark,
         title: _isAmharic ? 'ኢንቮይስ' : 'Invoiced',
         mainValue: _currencyFormat.format(totalBorrowedPrice),
         currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
         subtitle: _isAmharic ? 'ዴቢት' : 'Debit',
-        valueColor: const Color(0xFFDC2626),
+        valueColor: const Color(0xFFD97706),
       );
 
       // Card 2: Received (Settled / Payments / Income -> Green)
@@ -956,7 +956,7 @@ class _MainScreenState extends State<MainScreen> {
             ? (_isAmharic ? 'ጠቅላላ' : 'Total')
             : (_isAmharic ? 'አድሚን' : 'Admin'),
         valueColor:
-            widget.currentUser.isAdmin ? const Color(0xFF2563EB) : null,
+            widget.currentUser.isAdmin ? const Color(0xFFD97706) : null,
         padding: compactPad,
       );
 
@@ -967,6 +967,7 @@ class _MainScreenState extends State<MainScreen> {
         mainValue:
             '${_inventoryProducts.length} ${_isAmharic ? "ዓይነት" : "Items"}',
         subtitle: _isAmharic ? 'ካታሎግ' : 'Catalog',
+        valueColor: const Color(0xFF2563EB),
         padding: compactPad,
       );
 
@@ -3566,7 +3567,7 @@ class _MainScreenState extends State<MainScreen> {
                               style: const TextStyle(
                                 fontSize: 9,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF2563EB),
+                                color: Color(0xFFD97706),
                               ),
                             ),
                             TextSpan(
@@ -3575,7 +3576,7 @@ class _MainScreenState extends State<MainScreen> {
                                 fontWeight: FontWeight.w900,
                                 fontSize: 11.5,
                                 fontFamily: 'monospace',
-                                color: Color(0xFF2563EB),
+                                color: Color(0xFFD97706),
                               ),
                             ),
                           ],
@@ -3685,6 +3686,9 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.currentUser.isStorekeeper) {
+      _currentTabIndex = 3;
+    }
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final records = _filteredRecords;
@@ -3769,8 +3773,10 @@ class _MainScreenState extends State<MainScreen> {
         ],
       ),
 
-      // BOTTOM NAVIGATION TABS (Fully functional across Customer, Supplier, Delala, and Store)
-      bottomNavigationBar: Container(
+      // BOTTOM NAVIGATION TABS (Storekeeper only sees Store - no bottom bar; Admin & Sales see tabs)
+      bottomNavigationBar: widget.currentUser.isStorekeeper
+          ? null
+          : Container(
               decoration: BoxDecoration(
                 border: Border(
                   top: BorderSide(
