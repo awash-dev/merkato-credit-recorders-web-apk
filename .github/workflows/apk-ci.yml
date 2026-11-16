@@ -122,7 +122,14 @@ jobs:
       - name: Build release APK
         run: |
           yes | flutter doctor --android-licenses || true
-          flutter build apk --release
+          if ! flutter build apk --release 2>&1 | tee build_log.txt; then
+            BUILD_STATUS=${PIPESTATUS[0]}
+            echo "::error::Flutter build apk failed with exit code $BUILD_STATUS"
+            tail -n 25 build_log.txt | while IFS= read -r line; do
+              echo "::error title=FlutterBuildError::$line"
+            done
+            exit "$BUILD_STATUS"
+          fi
           if [ -f build/app/outputs/flutter-apk/app-release.apk ]; then
             cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/merkato-credit-record-release.apk
           elif [ -f build/app/outputs/apk/release/app-release.apk ]; then
