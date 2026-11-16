@@ -2561,7 +2561,7 @@ class _MainScreenState extends State<MainScreen> {
                             color: gridBorderColor,
                           ),
 
-                          // በካርቶን
+                          // በካርቶን (Yellow / Amber)
                           Expanded(
                             flex: 7,
                             child: Text(
@@ -2571,7 +2571,9 @@ class _MainScreenState extends State<MainScreen> {
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
                                 fontFamily: 'monospace',
-                                color: theme.colorScheme.onSurface,
+                                color: isDark
+                                    ? const Color(0xFFFBBF24)
+                                    : const Color(0xFFD97706),
                               ),
                             ),
                           ),
@@ -2581,7 +2583,7 @@ class _MainScreenState extends State<MainScreen> {
                             color: gridBorderColor,
                           ),
 
-                          // ጠቅላላ ፍሬ
+                          // ጠቅላላ ፍሬ (Green)
                           Expanded(
                             flex: 8,
                             child: Text(
@@ -2602,7 +2604,7 @@ class _MainScreenState extends State<MainScreen> {
                             color: gridBorderColor,
                           ),
 
-                          // የአንዱ ዋጋ
+                          // የአንዱ ዋጋ (Yellow / Amber)
                           Expanded(
                             flex: 8,
                             child: Padding(
@@ -2612,11 +2614,13 @@ class _MainScreenState extends State<MainScreen> {
                               child: Text(
                                 _currencyFormat.format(unitPrice),
                                 textAlign: TextAlign.right,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 10.5,
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: FontWeight.w700,
                                   fontFamily: 'monospace',
-                                  color: Color(0xFF2563EB),
+                                  color: isDark
+                                      ? const Color(0xFFFBBF24)
+                                      : const Color(0xFFD97706),
                                 ),
                               ),
                             ),
@@ -2627,7 +2631,7 @@ class _MainScreenState extends State<MainScreen> {
                             color: gridBorderColor,
                           ),
 
-                          // ድምር ዋጋ
+                          // ድምር ዋጋ (Red)
                           Expanded(
                             flex: 9,
                             child: Padding(
@@ -3383,7 +3387,7 @@ class _MainScreenState extends State<MainScreen> {
                               color: gridBorderColor,
                             ),
 
-                            // ዋጋ (Price - dark neutral matching Image 4)
+                            // ዋጋ (Unit Price - Yellow / Amber)
                             Expanded(
                               flex: 7,
                               child: Padding(
@@ -3395,11 +3399,11 @@ class _MainScreenState extends State<MainScreen> {
                                   textAlign: TextAlign.right,
                                   style: TextStyle(
                                     fontSize: 11,
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight: FontWeight.w700,
                                     fontFamily: 'monospace',
                                     color: isDark
-                                        ? const Color(0xFFCBD5E1)
-                                        : const Color(0xFF0F172A),
+                                        ? const Color(0xFFFBBF24)
+                                        : const Color(0xFFD97706),
                                   ),
                                 ),
                               ),
@@ -3410,7 +3414,7 @@ class _MainScreenState extends State<MainScreen> {
                               color: gridBorderColor,
                             ),
 
-                            // ብዛት (Qty - Blue matching Image 4)
+                            // ብዛት (Qty - Green)
                             Expanded(
                               flex: 5,
                               child: Padding(
@@ -3434,7 +3438,7 @@ class _MainScreenState extends State<MainScreen> {
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700,
                                     fontFamily: 'monospace',
-                                    color: Color(0xFF2563EB),
+                                    color: Color(0xFF16A34A),
                                   ),
                                 ),
                               ),
@@ -3445,7 +3449,7 @@ class _MainScreenState extends State<MainScreen> {
                               color: gridBorderColor,
                             ),
 
-                            // ድምር (Total - Blue for goods/debit matching Image 4, Green for return/payment)
+                            // ድምር (Total - Red for goods/debit, Green for return/payment)
                             Expanded(
                               flex: 8,
                               child: Padding(
@@ -3465,7 +3469,7 @@ class _MainScreenState extends State<MainScreen> {
                                     fontFamily: 'monospace',
                                     color: item.sign == '-'
                                         ? const Color(0xFF16A34A)
-                                        : const Color(0xFF2563EB),
+                                        : const Color(0xFFDC2626),
                                   ),
                                 ),
                               ),
