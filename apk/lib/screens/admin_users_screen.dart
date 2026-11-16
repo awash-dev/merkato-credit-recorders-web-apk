@@ -812,9 +812,35 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Create User / Sales Account',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _selectedRole == 'sales'
+                      ? 'Create Sales Account (አዲስ የሽያጭ አካውንት)'
+                      : 'Create Storekeeper (አዲስ የመጋዘን ኃላፊ)',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _selectedRole == 'sales'
+                        ? const Color(0xFFDCFCE7)
+                        : const Color(0xFFDBEAFE),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    _selectedRole == 'sales' ? 'SALES' : 'STOREKEEPER',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: _selectedRole == 'sales'
+                          ? const Color(0xFF16A34A)
+                          : const Color(0xFF2563EB),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
@@ -909,9 +935,16 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.person_add_alt_1_outlined, size: 18),
-                label: const Text('Create Account'),
+                label: Text(
+                  _selectedRole == 'sales'
+                      ? '+ Create Sales Account (የሽያጭ አካውንት ፍጠር)'
+                      : '+ Create Storekeeper Account (የመጋዘን አካውንት ፍጠር)',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
+                  backgroundColor: _selectedRole == 'sales'
+                      ? const Color(0xFF16A34A)
+                      : const Color(0xFF2563EB),
                   foregroundColor: Colors.white,
                 ),
               ),

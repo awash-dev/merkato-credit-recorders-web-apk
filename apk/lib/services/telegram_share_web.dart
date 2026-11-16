@@ -23,45 +23,38 @@ Future<void> autoShareStatementToTelegramPlatform({
     }
   }
 
-  // 2. Try Web Share API (native share sheet on Chrome / Safari)
-  bool sharedDirectly = false;
+  // 2. Automatically download statement image file
   if (imageBytes != null && imageBytes.isNotEmpty) {
     try {
-      final nav = html.window.navigator;
-      final file = html.File([imageBytes], filename, {'type': 'image/png'});
-      final shareData = {
-        'files': [file],
-        'title': title ?? 'Account Statement',
-        'text': messageText,
-      };
-      await nav.share(shareData);
-      sharedDirectly = true;
+      final blob = html.Blob([imageBytes], 'image/png');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', filename)
+        ..style.display = 'none';
+      html.document.body?.children.add(anchor);
+      anchor.click();
+      html.document.body?.children.remove(anchor);
+      html.Url.revokeObjectUrl(url);
     } catch (e) {
-      debugPrint('Web Share API not supported or dismissed: $e');
+      debugPrint('Direct image download error: $e');
     }
   }
 
-  // 3. If Web Share was not used (Desktop browser or unsupported), automatically download the image & open Telegram
-  if (!sharedDirectly) {
-    if (imageBytes != null && imageBytes.isNotEmpty) {
-      try {
-        final blob = html.Blob([imageBytes], 'image/png');
-        final url = html.Url.createObjectUrlFromBlob(blob);
-        final anchor = html.AnchorElement(href: url)
-          ..setAttribute('download', filename)
-          ..style.display = 'none';
-        html.document.body?.children.add(anchor);
-        anchor.click();
-        html.document.body?.children.remove(anchor);
-        html.Url.revokeObjectUrl(url);
-      } catch (e) {
-        debugPrint('Direct image download error: $e');
-      }
-    }
+  // 3. Auto-detect and open Telegram app directly
+  final encoded = Uri.encodeComponent(messageText);
 
-    // Automatically open Telegram with pre-filled message
-    final telegramUrl =
-        'https://t.me/share/url?text=${Uri.encodeComponent(messageText)}';
-    html.window.open(telegramUrl, '_blank');
+  // Directly launch installed Telegram Desktop app via custom scheme
+  try {
+    final tgAppAnchor = html.AnchorElement(href: 'tg://msg?text=$encoded')
+      ..style.display = 'none';
+    html.document.body?.children.add(tgAppAnchor);
+    tgAppAnchor.click();
+    html.document.body?.children.remove(tgAppAnchor);
+  } catch (e) {
+    debugPrint('tg:// launch attempt error: $e');
   }
+
+  // Also open Telegram share URL as universal web/app handler
+  final telegramUrl = 'https://t.me/share/url?text=$encoded';
+  html.window.open(telegramUrl, '_blank');
 }
