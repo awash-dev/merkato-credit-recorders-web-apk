@@ -122,12 +122,14 @@ jobs:
       - name: Build release APK
         run: |
           yes | flutter doctor --android-licenses || true
-          if ! flutter build apk --release 2>&1 | tee build_log.txt; then
-            BUILD_STATUS=${PIPESTATUS[0]}
+          flutter build apk --release > build_log.txt 2>&1 || BUILD_STATUS=$?
+          BUILD_STATUS=${BUILD_STATUS:-0}
+          if [ "$BUILD_STATUS" -ne 0 ]; then
             echo "::error::Flutter build apk failed with exit code $BUILD_STATUS"
-            tail -n 25 build_log.txt | while IFS= read -r line; do
+            tail -n 30 build_log.txt | while IFS= read -r line; do
               echo "::error title=FlutterBuildError::$line"
             done
+            cat build_log.txt
             exit "$BUILD_STATUS"
           fi
           echo "=== Locating built APK files across workspace ==="
