@@ -122,7 +122,17 @@ jobs:
       - name: Build release APK
         run: |
           yes | flutter doctor --android-licenses || true
-          flutter build apk --release
+          if ! flutter build apk --release 2>&1 | tee build_log.txt; then
+            echo "::error::Flutter build apk failed! Printing last 50 lines:"
+            tail -n 50 build_log.txt | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            echo "### Flutter Build APK Failure" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 80 build_log.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           if [ -f build/app/outputs/flutter-apk/app-release.apk ]; then
             cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/merkato-credit-record-release.apk
           elif [ -f build/app/outputs/apk/release/app-release.apk ]; then
@@ -130,6 +140,13 @@ jobs:
             cp build/app/outputs/apk/release/app-release.apk build/app/outputs/flutter-apk/merkato-credit-record-release.apk
             cp build/app/outputs/apk/release/app-release.apk build/app/outputs/flutter-apk/app-release.apk
           fi
+
+      - name: Upload Build Log on Failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build_log_${{ github.sha }}
+          path: apk/build_log.txt
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
