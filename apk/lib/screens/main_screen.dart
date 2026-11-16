@@ -1140,6 +1140,10 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _openSettingsModal() {
+    final titleController = TextEditingController(
+      text: AppSettingsService.appTitleNotifier.value,
+    );
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1147,446 +1151,520 @@ class _MainScreenState extends State<MainScreen> {
       builder: (ctx) {
         final isDark = Theme.of(ctx).brightness == Brightness.dark;
         final cardColor = isDark ? const Color(0xFF1B2234) : Colors.white;
-        return Container(
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
+
+        return Padding(
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.88,
+            ),
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    _isAmharic ? 'ቅንብሮች' : 'Settings',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Language Switch Row
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF242C40)
-                      : const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isDark
-                        ? const Color(0xFF2E384D)
-                        : const Color(0xFFE2E8F0),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _isAmharic ? 'ቋንቋ' : 'Language',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF334155) : Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: () async {
-                              await LanguageService.setLanguage('en');
-                              if (mounted) setState(() {});
-                              if (ctx.mounted) Navigator.pop(ctx);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              decoration: BoxDecoration(
-                                color: !_isAmharic
-                                    ? const Color(0xFF2563EB)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: !_isAmharic
-                                      ? const Color(0xFF2563EB)
-                                      : const Color(0xFFCBD5E1),
-                                ),
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                'English',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: !_isAmharic
-                                      ? Colors.white
-                                      : (isDark
-                                            ? Colors.white70
-                                            : const Color(0xFF334155)),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: InkWell(
-                            onTap: () async {
-                              await LanguageService.setLanguage('am');
-                              if (mounted) setState(() {});
-                              if (ctx.mounted) Navigator.pop(ctx);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              decoration: BoxDecoration(
-                                color: _isAmharic
-                                    ? const Color(0xFF2563EB)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: _isAmharic
-                                      ? const Color(0xFF2563EB)
-                                      : const Color(0xFFCBD5E1),
-                                ),
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                'አማርኛ',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: _isAmharic
-                                      ? Colors.white
-                                      : (isDark
-                                            ? Colors.white70
-                                            : const Color(0xFF334155)),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Business Branding & Logo Settings (Dynamic App Title and Logo)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF242C40)
-                      : const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isDark
-                        ? const Color(0xFF2E384D)
-                        : const Color(0xFFE2E8F0),
                   ),
-                ),
-                child: StatefulBuilder(
-                  builder: (ctx2, setLocalState) {
-                    final titleController = TextEditingController(
-                      text: AppSettingsService.appTitleNotifier.value,
-                    );
-
-                    return Column(
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _isAmharic ? 'ቅንብሮች' : 'Settings',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.close,
+                          size: 20,
+                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                        ),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Language Switch Row
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF242C40)
+                          : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF2E384D)
+                            : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _isAmharic
-                              ? 'የንግድ ስም እና ሎጎ'
-                              : 'Business Branding & Logo',
-                          style: const TextStyle(
+                          _isAmharic ? 'ቋንቋ' : 'Language',
+                          style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : const Color(0xFF0F172A),
                           ),
                         ),
                         const SizedBox(height: 10),
                         Row(
                           children: [
-                            AppSettingsService.buildLogoWidget(size: 40),
+                            Expanded(
+                              child: InkWell(
+                                onTap: () async {
+                                  await LanguageService.setLanguage('en');
+                                  if (mounted) setState(() {});
+                                  if (ctx.mounted) Navigator.pop(ctx);
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: !_isAmharic
+                                        ? const Color(0xFF2563EB)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: !_isAmharic
+                                          ? const Color(0xFF2563EB)
+                                          : const Color(0xFFCBD5E1),
+                                    ),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    'English',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: !_isAmharic
+                                          ? Colors.white
+                                          : (isDark
+                                                ? Colors.white70
+                                                : const Color(0xFF334155)),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: Text(
-                                _isAmharic
-                                    ? 'የመረጡት ሎጎ በራስጌ እና በፒዲኤፍ ሪፖርቶች ላይ ይታያል'
-                                    : 'Your logo appears in app headers and PDF statements',
-                                style: TextStyle(
-                                  fontSize: 10.5,
-                                  color: isDark
-                                      ? const Color(0xFF94A3B8)
-                                      : const Color(0xFF64748B),
+                              child: InkWell(
+                                onTap: () async {
+                                  await LanguageService.setLanguage('am');
+                                  if (mounted) setState(() {});
+                                  if (ctx.mounted) Navigator.pop(ctx);
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: _isAmharic
+                                        ? const Color(0xFF2563EB)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: _isAmharic
+                                          ? const Color(0xFF2563EB)
+                                          : const Color(0xFFCBD5E1),
+                                    ),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    'አማርኛ',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: _isAmharic
+                                          ? Colors.white
+                                          : (isDark
+                                                ? Colors.white70
+                                                : const Color(0xFF334155)),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 10),
-                        Row(
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Business Branding & Logo Settings (Dynamic App Title and Logo)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF242C40)
+                          : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF2E384D)
+                            : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: StatefulBuilder(
+                      builder: (ctx2, setLocalState) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            ElevatedButton.icon(
-                              onPressed: () async {
-                                try {
-                                  final success =
-                                      await AppSettingsService.pickAndSaveLogo();
-                                  if (success) {
-                                    setLocalState(() {});
-                                    if (mounted) setState(() {});
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          _isAmharic
-                                              ? 'የሎጎ ምስል በተሳካ ሁኔታ ተጭኗል!'
-                                              : 'Logo image uploaded successfully!',
-                                        ),
-                                        backgroundColor: const Color(
-                                          0xFF16A34A,
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                } catch (e) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Logo upload error: $e'),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
-                              icon: const Icon(
-                                Icons.add_photo_alternate_rounded,
-                                size: 16,
-                              ),
-                              label: Text(
-                                _isAmharic ? 'የሎጎ ምስል ጫን' : 'Upload Logo Image',
-                                style: const TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF2563EB),
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
+                            Text(
+                              _isAmharic
+                                  ? 'የንግድ ስም እና ሎጎ (Branding)'
+                                  : 'Business Branding & Logo',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : const Color(0xFF0F172A),
                               ),
                             ),
-                            if (AppSettingsService.hasCustomLogo) ...[
-                              const SizedBox(width: 8),
-                              OutlinedButton.icon(
-                                onPressed: () async {
-                                  await AppSettingsService.resetToDefaultLogo();
-                                  setLocalState(() {});
-                                  if (mounted) setState(() {});
-                                },
-                                icon: const Icon(
-                                  Icons.restore_rounded,
-                                  size: 15,
-                                ),
-                                label: Text(
-                                  _isAmharic ? 'ነባሪ ሎጎ' : 'Reset to Default',
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 8,
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                AppSettingsService.buildLogoWidget(size: 40),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    _isAmharic
+                                        ? 'የመረጡት ሎጎ በራስጌ እና በፒዲኤፍ ሪፖርቶች ላይ ይታያል'
+                                        : 'Your logo appears in app headers and PDF statements',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      color: isDark
+                                          ? const Color(0xFF94A3B8)
+                                          : const Color(0xFF64748B),
+                                    ),
                                   ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: () async {
+                                    try {
+                                      final success =
+                                          await AppSettingsService.pickAndSaveLogo();
+                                      if (success) {
+                                        setLocalState(() {});
+                                        if (mounted) setState(() {});
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              _isAmharic
+                                                  ? 'የሎጎ ምስል በተሳካ ሁኔታ ተጭኗል!'
+                                                  : 'Logo image uploaded successfully!',
+                                            ),
+                                            backgroundColor: const Color(
+                                              0xFF16A34A,
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    } catch (e) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Logo upload error: $e'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(
+                                    Icons.add_photo_alternate_rounded,
+                                    size: 16,
+                                  ),
+                                  label: Text(
+                                    _isAmharic ? 'የሎጎ ምስል ጫን' : 'Upload Logo',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF2563EB),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                                if (AppSettingsService.hasCustomLogo) ...[
+                                  const SizedBox(width: 8),
+                                  OutlinedButton.icon(
+                                    onPressed: () async {
+                                      await AppSettingsService.resetToDefaultLogo();
+                                      setLocalState(() {});
+                                      if (mounted) setState(() {});
+                                    },
+                                    icon: const Icon(
+                                      Icons.restore_rounded,
+                                      size: 15,
+                                    ),
+                                    label: Text(
+                                      _isAmharic ? 'ነባሪ ሎጎ' : 'Reset Logo',
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: titleController,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white : const Color(0xFF0F172A),
+                              ),
+                              decoration: InputDecoration(
+                                labelText: _isAmharic
+                                    ? 'የመተግበሪያ / የንግድ ስም'
+                                    : 'App / Business Title',
+                                labelStyle: TextStyle(
+                                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                ),
+                                isDense: true,
+                                filled: true,
+                                fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(
+                                    color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(
+                                    color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: const BorderSide(
+                                    color: Color(0xFF2563EB),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                suffixIcon: IconButton(
+                                  icon: const Icon(Icons.check_circle, size: 20, color: Color(0xFF16A34A)),
+                                  tooltip: _isAmharic ? 'አስቀምጥ' : 'Save Title',
+                                  onPressed: () async {
+                                    await AppSettingsService.setAppTitle(
+                                      titleController.text,
+                                    );
+                                    setLocalState(() {});
+                                    if (mounted) setState(() {});
+                                    if (ctx.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            _isAmharic
+                                                ? 'የንግድ ስም በተሳካ ሁኔታ ተቀምጧል!'
+                                                : 'Business title saved successfully!',
+                                          ),
+                                          backgroundColor: const Color(0xFF16A34A),
+                                          duration: const Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ),
+                              ),
+                              onSubmitted: (val) async {
+                                await AppSettingsService.setAppTitle(val);
+                                setLocalState(() {});
+                                if (mounted) setState(() {});
+                                if (ctx.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        _isAmharic
+                                            ? 'የንግድ ስም በተሳካ ሁኔታ ተቀምጧል!'
+                                            : 'Business title saved successfully!',
+                                      ),
+                                      backgroundColor: const Color(0xFF16A34A),
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  if (widget.currentUser.isAdmin) ...[
+                    const SizedBox(height: 12),
+                    // Salespersons & Storekeepers Management (Add Sales & Manage All in Settings)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF242C40)
+                            : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF2E384D)
+                              : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.admin_panel_settings_rounded,
+                                size: 19,
+                                color: Color(0xFF16A34A),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _isAmharic
+                                    ? 'የሽያጭ ሠራተኞች እና መደብሮች አስተዳድር'
+                                    : 'Sales, Storekeepers & Stores',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _isAmharic
+                                ? 'የሽያጭ ሠራተኞችን (Sales) መዝግብ ወይም ሁሉንም መደብሮች እና ተጠቃሚዎች በአንድ ቦታ አስተዳድር፦'
+                                : 'Add Sales account or open Manage All to organize stores and accounts:',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF64748B),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    _openAddSalesUserDialog();
+                                  },
+                                  icon: const Icon(
+                                    Icons.person_add_alt_1_outlined,
+                                    size: 15,
+                                  ),
+                                  label: Text(
+                                    _isAmharic ? '+ ሽያጭ መዝግብ' : '+ Add Sales',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF16A34A),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () async {
+                                    Navigator.pop(ctx);
+                                    await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const AdminUsersScreen(),
+                                      ),
+                                    );
+                                    _loadStoresAndRecords();
+                                  },
+                                  icon: const Icon(Icons.manage_accounts_rounded, size: 16),
+                                  label: Text(
+                                    _isAmharic ? 'ሁሉንም አስተዳድር' : 'Manage All',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+                                    side: BorderSide(
+                                      color: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
                                   ),
                                 ),
                               ),
                             ],
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        TextField(
-                          controller: titleController,
-                          decoration: InputDecoration(
-                            labelText: _isAmharic
-                                ? 'የመተግበሪያ / የንግድ ስም'
-                                : 'App / Business Title',
-                            isDense: true,
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.check, size: 18),
-                              onPressed: () async {
-                                await AppSettingsService.setAppTitle(
-                                  titleController.text,
-                                );
-                                setLocalState(() {});
-                                if (mounted) setState(() {});
-                              },
-                            ),
                           ),
-                          onSubmitted: (val) async {
-                            await AppSettingsService.setAppTitle(val);
-                            setLocalState(() {});
-                            if (mounted) setState(() {});
-                          },
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-              if (widget.currentUser.isAdmin) ...[
-                const SizedBox(height: 12),
-                // Salespersons & Storekeepers Management (Add Sales in Settings)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? const Color(0xFF242C40)
-                        : const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isDark
-                          ? const Color(0xFF2E384D)
-                          : const Color(0xFFE2E8F0),
+                        ],
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.point_of_sale_rounded,
-                            size: 19,
-                            color: Color(0xFF16A34A),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            _isAmharic
-                                ? 'የሽያጭ ሠራተኞች እና ተጠቃሚዎች (Sales)'
-                                : 'Salespersons & Users Management',
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _isAmharic
-                            ? 'የሽያጭ ሠራተኞችን (Sales) እና የመጋዘን ኃላፊዎችን በቀላሉ ይመዝግቡ እና ያስተዳድሩ፦'
-                            : 'Add Sales account or manage storekeeper accounts:',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isDark
-                              ? const Color(0xFF94A3B8)
-                              : const Color(0xFF64748B),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.pop(ctx);
-                                _openAddSalesUserDialog();
-                              },
-                              icon: const Icon(
-                                Icons.person_add_alt_1_outlined,
-                                size: 15,
-                              ),
-                              label: Text(
-                                _isAmharic ? 'የሽያጭ ሠራተኛ መዝግብ' : 'Add Sales',
-                                style: const TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF16A34A),
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                Navigator.pop(ctx);
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const AdminUsersScreen(),
-                                  ),
-                                );
-                                _loadStoresAndRecords();
-                              },
-                              icon: const Icon(Icons.people_outline, size: 15),
-                              label: Text(
-                                _isAmharic ? 'ሁሉንም አስተዳድር' : 'Manage All',
-                                style: const TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
+                  ],
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -1884,6 +1962,92 @@ class _MainScreenState extends State<MainScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Store Switcher Dropdown Component (inside Stock tab)
+          if (_stores.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+              child: Tooltip(
+                message: _activeStoreLabel,
+                child: Container(
+                  height: 38,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFCBD5E1),
+                      width: 1,
+                    ),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: (_selectedStoreId == 'all' ||
+                            _stores.any((s) => s.id == _selectedStoreId))
+                        ? _selectedStoreId
+                        : (_stores.isNotEmpty ? _stores.first.id : 'all'),
+                    isDense: true,
+                    isExpanded: true,
+                    dropdownColor:
+                        isDark ? const Color(0xFF1E293B) : Colors.white,
+                    icon: Icon(
+                      Icons.arrow_drop_down,
+                      size: 22,
+                      color: isDark
+                          ? const Color(0xFFCBD5E1)
+                          : const Color(0xFF475569),
+                    ),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
+                    items: [
+                      DropdownMenuItem(
+                        value: 'all',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.storefront_outlined,
+                                size: 16, color: Color(0xFF2563EB)),
+                            const SizedBox(width: 8),
+                            Text(
+                              _isAmharic ? 'ሁሉም መደብሮች' : 'All Stores',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ..._accessibleStores.map((s) => DropdownMenuItem(
+                            value: s.id,
+                            child: Row(
+                              children: [
+                                const Icon(Icons.store_rounded,
+                                    size: 16, color: Color(0xFF16A34A)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    s.name,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        _onStoreChanged(val);
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+
           // Store Filter Chips (matching Image 2)
           if (_stores.isNotEmpty)
             SingleChildScrollView(
@@ -2236,7 +2400,7 @@ class _MainScreenState extends State<MainScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Table Header Row: # | Carton | Pcs/Ctn | Total Pcs | Unit Price | Total Value
+                    // Table Header Row: # | Pcs/Ctn | Total Pcs | Unit Price | Total Value
                     Container(
                       padding: const EdgeInsets.symmetric(
                         vertical: 8,
@@ -2256,7 +2420,7 @@ class _MainScreenState extends State<MainScreen> {
                       child: Row(
                         children: [
                           SizedBox(
-                            width: 22,
+                            width: 24,
                             child: Text(
                               '#',
                               textAlign: TextAlign.center,
@@ -2275,28 +2439,9 @@ class _MainScreenState extends State<MainScreen> {
                             color: gridBorderColor,
                           ),
                           Expanded(
-                            flex: 6,
+                            flex: 7,
                             child: Text(
-                              _isAmharic ? 'ካርቶን' : 'Ctn',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.bold,
-                                color: isDark
-                                    ? const Color(0xFFCBD5E1)
-                                    : const Color(0xFF334155),
-                              ),
-                            ),
-                          ),
-                          Container(
-                            width: 1,
-                            height: 16,
-                            color: gridBorderColor,
-                          ),
-                          Expanded(
-                            flex: 6,
-                            child: Text(
-                              _isAmharic ? 'በካርቶን' : 'Pcs',
+                              _isAmharic ? 'በካርቶን' : 'Pcs/Ctn',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 10.5,
@@ -2397,7 +2542,7 @@ class _MainScreenState extends State<MainScreen> {
                         children: [
                           // #
                           SizedBox(
-                            width: 22,
+                            width: 24,
                             child: Text(
                               '1',
                               textAlign: TextAlign.center,
@@ -2416,29 +2561,9 @@ class _MainScreenState extends State<MainScreen> {
                             color: gridBorderColor,
                           ),
 
-                          // ካርቶን
-                          Expanded(
-                            flex: 6,
-                            child: Text(
-                              '${prod.cartons}',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                fontFamily: 'monospace',
-                                color: theme.colorScheme.onSurface,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            width: 1,
-                            height: 22,
-                            color: gridBorderColor,
-                          ),
-
                           // በካርቶን
                           Expanded(
-                            flex: 6,
+                            flex: 7,
                             child: Text(
                               '${prod.pcsPerCarton.toInt()}',
                               textAlign: TextAlign.center,
@@ -3584,91 +3709,26 @@ class _MainScreenState extends State<MainScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (_currentTabIndex == 3 ||
-                      widget.currentUser.isStorekeeper ||
-                      widget.currentUser.isSales)
-                    Tooltip(
-                      message: _activeStoreLabel,
-                      child: Container(
-                        height: 28,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? const Color(0xFF334155)
-                              : const Color(0xFFCBD5E1),
-                          borderRadius: BorderRadius.circular(4),
+                  ValueListenableBuilder<String>(
+                    valueListenable: AppSettingsService.appTitleNotifier,
+                    builder: (context, title, _) {
+                      return Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: theme.colorScheme.onSurface,
+                          letterSpacing: -0.2,
                         ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: (_selectedStoreId == 'all' ||
-                                    _stores.any((s) => s.id == _selectedStoreId))
-                                ? _selectedStoreId
-                                : (_stores.isNotEmpty ? _stores.first.id : 'all'),
-                            isDense: true,
-                            isExpanded: true,
-                            dropdownColor:
-                                isDark ? const Color(0xFF1E293B) : Colors.white,
-                            icon: Icon(
-                              Icons.arrow_drop_down,
-                              size: 18,
-                              color: isDark
-                                  ? const Color(0xFFCBD5E1)
-                                  : const Color(0xFF475569),
-                            ),
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color:
-                                  isDark ? Colors.white : const Color(0xFF0F172A),
-                            ),
-                            items: [
-                              DropdownMenuItem(
-                                value: 'all',
-                                child: Text(
-                                  _isAmharic ? 'ሁሉም መደብሮች' : 'All Stores',
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              ..._accessibleStores.map((s) => DropdownMenuItem(
-                                value: s.id,
-                                child: Text(
-                                  s.name,
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              )),
-                            ],
-                            onChanged: (val) {
-                              if (val != null) {
-                                _onStoreChanged(val);
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    ValueListenableBuilder<String>(
-                      valueListenable: AppSettingsService.appTitleNotifier,
-                      builder: (context, title, _) {
-                        return Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: theme.colorScheme.onSurface,
-                            letterSpacing: -0.2,
-                          ),
-                        );
-                      },
-                    ),
+                      );
+                    },
+                  ),
                   Text(
                     _currentTabLabel,
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 10.5,
                       fontWeight: FontWeight.w500,
                       color: isDark
                           ? const Color(0xFF94A3B8)
@@ -3705,12 +3765,8 @@ class _MainScreenState extends State<MainScreen> {
         ],
       ),
 
-      // BOTTOM NAVIGATION TABS
-      // Admin: Customer, Supplier, Delala, Store. Storekeeper/Sales: Store only (no bottom bar needed).
-      bottomNavigationBar: (widget.currentUser.isStorekeeper ||
-              widget.currentUser.isSales)
-          ? null
-          : Container(
+      // BOTTOM NAVIGATION TABS (Fully functional across Customer, Supplier, Delala, and Store)
+      bottomNavigationBar: Container(
               decoration: BoxDecoration(
                 border: Border(
                   top: BorderSide(

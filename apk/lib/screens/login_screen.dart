@@ -280,6 +280,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                 TextField(
                                   controller: _phoneController,
                                   keyboardType: TextInputType.phone,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                  ),
+                                  cursorColor: const Color(0xFF2563EB),
                                   autofillHints: const [
                                     AutofillHints.username,
                                     AutofillHints.telephoneNumber,
@@ -312,6 +318,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                 TextField(
                                   controller: _passwordController,
                                   obscureText: _obscurePassword,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                  ),
+                                  cursorColor: const Color(0xFF2563EB),
                                   autofillHints: const [
                                     AutofillHints.password,
                                   ],

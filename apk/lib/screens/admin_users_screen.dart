@@ -516,10 +516,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F9ED),
       appBar: AppBar(
-        title: const Text('User & Sales Accounts'),
+        title: const Text('Manage All (Users & Stores)'),
         backgroundColor: Colors.white,
         elevation: 0.5,
         foregroundColor: const Color(0xFF0F172A),
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+        ),
       ),
       body: TelebirrBackground(
         child: _isLoading
