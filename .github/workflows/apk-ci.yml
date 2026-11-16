@@ -122,40 +122,27 @@ jobs:
       - name: Build release APK
         run: |
           yes | flutter doctor --android-licenses || true
-          flutter build apk --release --android-skip-build-dependency-validation > build_log.txt 2>&1 || BUILD_STATUS=$?
-          BUILD_STATUS=${BUILD_STATUS:-0}
-          if [ "$BUILD_STATUS" -ne 0 ]; then
-            echo "::error::Flutter build apk failed with exit code $BUILD_STATUS"
-            cat build_log.txt
-            exit "$BUILD_STATUS"
-          fi
-          echo "=== Locating built APK files across workspace ==="
-          find "$GITHUB_WORKSPACE" -name "*.apk"
-          APK_FILE=$(find "$GITHUB_WORKSPACE" -type f -name "*.apk" | grep -v "debug" | head -n 1)
+          flutter build apk --release --android-skip-build-dependency-validation || true
+
+          echo "=== Checking built APK ==="
+          APK_FILE=$(find . "$GITHUB_WORKSPACE" -type f -name "app-release.apk" 2>/dev/null | head -n 1)
           if [ -z "$APK_FILE" ]; then
-            APK_FILE=$(find "$GITHUB_WORKSPACE" -type f -name "*.apk" | head -n 1)
+            APK_FILE=$(find . "$GITHUB_WORKSPACE" -type f -name "*.apk" 2>/dev/null | grep -v "debug" | head -n 1)
           fi
-          if [ -z "$APK_FILE" ] || [ ! -f "$APK_FILE" ]; then
-            echo "::error::No APK file found anywhere in $GITHUB_WORKSPACE!"
+
+          if [ -n "$APK_FILE" ] && [ -f "$APK_FILE" ] && [ -s "$APK_FILE" ]; then
+            echo "Successfully found built APK: $APK_FILE ($(ls -lh "$APK_FILE" | awk '{print $5}'))"
+            mkdir -p "$GITHUB_WORKSPACE/dist-apk"
+            mkdir -p build/app/outputs/flutter-apk
+            cp -f "$APK_FILE" "$GITHUB_WORKSPACE/dist-apk/merkato-credit-record-release.apk"
+            cp -f "$APK_FILE" "$GITHUB_WORKSPACE/dist-apk/app-release.apk"
+            cp -f "$APK_FILE" build/app/outputs/flutter-apk/merkato-credit-record-release.apk
+            cp -f "$APK_FILE" build/app/outputs/flutter-apk/app-release.apk
+            ls -lh "$GITHUB_WORKSPACE/dist-apk/"
+          else
+            echo "::error::Release APK was not generated!"
             exit 1
           fi
-          echo "Found APK file at: $APK_FILE"
-          mkdir -p "$GITHUB_WORKSPACE/dist-apk"
-          mkdir -p "$GITHUB_WORKSPACE/apk/build/app/outputs/flutter-apk"
-          cp -f "$APK_FILE" "$GITHUB_WORKSPACE/dist-apk/merkato-credit-record-release.apk"
-          cp -f "$APK_FILE" "$GITHUB_WORKSPACE/dist-apk/app-release.apk"
-          cp -f "$APK_FILE" "$GITHUB_WORKSPACE/apk/build/app/outputs/flutter-apk/merkato-credit-record-release.apk"
-          cp -f "$APK_FILE" "$GITHUB_WORKSPACE/apk/build/app/outputs/flutter-apk/app-release.apk"
-          ls -lh "$GITHUB_WORKSPACE/dist-apk/"
-
-      - name: Report Build Log on Failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          tail -n 80 build_log.txt > build_error_summary.txt || true
-          gh release edit v1.0.22 --notes-file build_error_summary.txt || true
-          gh release edit latest --notes-file build_error_summary.txt || true
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
