@@ -21,23 +21,37 @@ import '../models/stock_movement.dart';
 /// endpoint. Connection credentials are loaded from `apk/.env` via
 /// `flutter_dotenv` (loaded in `main.dart`) instead of being hardcoded.
 class NeonDatabaseService {
-  // Connection string from .env (loaded in main.dart via flutter_dotenv)
+  static const String defaultConnectionString =
+      'postgresql://neondb_owner:npg_OtyTj7F9Aqnz@ep-red-sea-b5yphk96-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require';
+
+  // Connection string from compile-time dart-define, .env asset, or default fallback
   static String get connectionString {
     try {
+      const fromDefine = String.fromEnvironment('NEON_CONNECTION_STRING');
+      if (fromDefine.isNotEmpty) return fromDefine;
+
       if (dotenv.isInitialized) {
         final val = dotenv.env['NEON_CONNECTION_STRING'];
         if (val != null && val.isNotEmpty) return val;
       }
     } catch (_) {}
-    throw StateError(
-      'NEON_CONNECTION_STRING is not set. Add it to apk/.env '
-      '(bundled as an asset, never committed) and rebuild.',
-    );
+    return defaultConnectionString;
   }
 
   static List<String> get candidateEndpoints {
     final list = <String>[];
     try {
+      const fromDefineDir = String.fromEnvironment('NEON_DIRECT_ENDPOINT');
+      if (fromDefineDir.isNotEmpty) {
+        list.add(fromDefineDir.replaceAll('-pooler', ''));
+        list.add(fromDefineDir);
+      }
+      const fromDefineReg = String.fromEnvironment('NEON_REGION_ENDPOINT');
+      if (fromDefineReg.isNotEmpty) {
+        list.add(fromDefineReg.replaceAll('-pooler', ''));
+        list.add(fromDefineReg);
+      }
+
       if (dotenv.isInitialized) {
         final proxy =
             dotenv.env['NEON_PROXY_ENDPOINT'] ??
