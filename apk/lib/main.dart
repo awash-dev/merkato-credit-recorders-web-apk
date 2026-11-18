@@ -8,6 +8,7 @@ import 'services/language_service.dart';
 import 'services/app_settings_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -70,19 +71,48 @@ void main() async {
   runApp(MerkatoCreditApp(initialUser: storedUser));
 }
 
-class MerkatoCreditApp extends StatelessWidget {
+class MerkatoCreditApp extends StatefulWidget {
   final AppUser? initialUser;
 
   const MerkatoCreditApp({super.key, this.initialUser});
 
   @override
+  State<MerkatoCreditApp> createState() => _MerkatoCreditAppState();
+}
+
+class _MerkatoCreditAppState extends State<MerkatoCreditApp> {
+  AppUser? _initialUser;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialUser = widget.initialUser;
+    LanguageService.currentLanguage.addListener(_onChanged);
+    LanguageService.translationChanged.addListener(_onChanged);
+  }
+
+  void _onChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(MerkatoCreditApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _initialUser = widget.initialUser;
+  }
+
+  @override
+  void dispose() {
+    LanguageService.currentLanguage.removeListener(_onChanged);
+    LanguageService.translationChanged.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<String>(
-      valueListenable: LanguageService.currentLanguage,
-      builder: (context, lang, _) {
-        return MaterialApp(
-          title: lang == 'am' ? 'መርካቶ የብድር መዝገብ' : 'Merkato Credit Record',
-          debugShowCheckedModeBanner: false,
+    return MaterialApp(
+      title: LanguageService.t('appName'),
+      debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.system, // Accepts system bg color and text color
       builder: (context, child) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -97,88 +127,11 @@ class MerkatoCreditApp extends StatelessWidget {
         );
         return child ?? const SizedBox();
       },
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2563EB),
-          primary: const Color(0xFF2563EB),
-          surface: Colors.white,
-          onSurface: const Color(0xFF0F172A),
-          brightness: Brightness.light,
-        ),
-        scaffoldBackgroundColor:
-            const Color(0xFFF5F9ED), // Telebirr-inspired soft primary background
-        dividerColor: const Color(0xFFE2E8F0),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
-          elevation: 0.5,
-          scrolledUnderElevation: 0.5,
-          centerTitle: false,
-          systemOverlayStyle: SystemUiOverlayStyle(
-            statusBarColor: Colors.transparent,
-            statusBarIconBrightness: Brightness.dark,
-            statusBarBrightness: Brightness.light,
-            systemNavigationBarColor: Colors.white,
-            systemNavigationBarIconBrightness: Brightness.dark,
-          ),
-          iconTheme: IconThemeData(color: Color(0xFF0F172A)),
-          titleTextStyle: TextStyle(
-            color: Color(0xFF0F172A),
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Colors.white,
-          selectedItemColor: Color(0xFF2563EB),
-          unselectedItemColor: Color(0xFF64748B),
-          elevation: 8,
-        ),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2563EB),
-          primary: const Color(0xFF3B82F6),
-          surface: const Color(0xFF1E1E1E),
-          onSurface: const Color(0xFFF8FAFC),
-          brightness: Brightness.dark,
-        ),
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        dividerColor: const Color(0xFF27272A),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF1E1E1E),
-          elevation: 0.5,
-          scrolledUnderElevation: 0.5,
-          centerTitle: false,
-          systemOverlayStyle: SystemUiOverlayStyle(
-            statusBarColor: Colors.transparent,
-            statusBarIconBrightness: Brightness.light,
-            statusBarBrightness: Brightness.dark,
-            systemNavigationBarColor: Color(0xFF121212),
-            systemNavigationBarIconBrightness: Brightness.light,
-          ),
-          iconTheme: IconThemeData(color: Color(0xFFF8FAFC)),
-          titleTextStyle: TextStyle(
-            color: Color(0xFFF8FAFC),
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Color(0xFF1E1E1E),
-          selectedItemColor: Color(0xFF3B82F6),
-          unselectedItemColor: Color(0xFF94A3B8),
-          elevation: 8,
-        ),
-      ),
-      home: initialUser != null
-          ? MainScreen(currentUser: initialUser!)
+      theme: AppTheme.lightTheme(),
+      darkTheme: AppTheme.darkTheme(),
+      home: _initialUser != null
+          ? MainScreen(currentUser: _initialUser!)
           : const LoginScreen(),
-    );
-      },
     );
   }
 }

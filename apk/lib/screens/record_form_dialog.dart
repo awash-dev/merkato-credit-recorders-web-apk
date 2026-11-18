@@ -339,13 +339,16 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
   }
 
   double _calculateItemTotal(LineItemFormItem it) {
+    if (it.isOtherTransaction) {
+      return double.tryParse(it.priceController.text) ?? 0.0;
+    }
     final cartons = double.tryParse(it.cartonsController.text) ?? 0.0;
     final pcs = double.tryParse(it.pcsController.text) ?? 1.0;
     final price = double.tryParse(it.priceController.text) ?? 0.0;
     final isDebit = it.sign == '+';
     final isCashBorrow = isDebit && it.isCashBorrow && isDelala;
     final isItemReturn = !isDebit && it.isItemReturn;
-    final bool useInventory = (isDebit && !isCashBorrow) || isStock || isItemReturn;
+    final bool useInventory = !it.isOtherTransaction && ((isDebit && !isCashBorrow) || isStock || isItemReturn);
 
     if (useInventory) {
       if (it.packagingUnit == 'Carton') {
@@ -408,9 +411,9 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
       showSelectedDatePreview: true,
-      useEthiopicNumerals: _isAmharic,
-      cancelText: _isAmharic ? 'ሰርዝ' : 'Cancel',
-      confirmText: _isAmharic ? 'ይሁን' : 'OK',
+      useEthiopicNumerals: false,
+      cancelText: LanguageService.t('cancel'),
+      confirmText: LanguageService.t('confirm'),
     );
     if (result == null) return;
     final picked = result.gregorianDate;
@@ -450,7 +453,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
       final bool isCashBorrow = isDebit && f.isCashBorrow && isDelala;
       final bool isItemReturn = !isDebit && f.isItemReturn;
       // Stock records (In or Out) always use the inventory path; debit and item returns also use inventory.
-      final bool useInventory = widget.activeTab == 'stock' || (isDebit && !isCashBorrow) || isItemReturn;
+      final bool useInventory = !f.isOtherTransaction && (widget.activeTab == 'stock' || (isDebit && !isCashBorrow) || isItemReturn);
       final unitName = f.packagingUnit == 'Other'
           ? (_otherUnitController.text.trim().isNotEmpty ? _otherUnitController.text.trim() : 'Other')
           : f.packagingUnit;
@@ -463,7 +466,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
       String itemName = f.nameController.text.trim();
 
       // Resolved bank/channel name (uses custom text when "Other" is selected)
-      final bankName = useInventory
+      final bankName = (useInventory || f.isOtherTransaction)
           ? null
           : (f.typeOrBank == 'Other'
               ? (f.bankCustomController.text.trim().isNotEmpty
@@ -471,7 +474,12 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                   : 'Other')
               : f.typeOrBank);
 
-      if (!useInventory) {
+      if (f.isOtherTransaction) {
+        if (itemName.isEmpty) {
+          itemName = LanguageService.t('otherTransactions');
+        }
+        qty = 1.0;
+      } else if (!useInventory) {
         if (f.sign == '+') {
           itemName = 'Cash via $bankName';
         } else {
@@ -500,19 +508,21 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
         sign: f.sign,
         bank: bankName,
         paymentMethod: bankName,
-        reference: !useInventory && _notesController.text.trim().isNotEmpty
+        reference: (!useInventory || f.isOtherTransaction) && _notesController.text.trim().isNotEmpty
             ? _notesController.text.trim()
             : null,
-        customType: useInventory
-            ? (isDebit
-                ? 'Goods'
-                : (isItemReturn
-                    ? 'Item Return'
-                    : 'Stock Out'))
-            : (f.sign == '+' ? 'Cash Borrow' : 'Payment'),
+        customType: f.isOtherTransaction
+            ? 'Other Transactions'
+            : (useInventory
+                ? (isDebit
+                    ? 'Goods'
+                    : (isItemReturn
+                        ? 'Item Return'
+                        : 'Stock Out'))
+                : (f.sign == '+' ? 'Cash Borrow' : 'Payment')),
         cartons: useInventory ? ctns : null,
         pcsPerCarton: useInventory ? (unitName == 'Carton' ? (pcs != null && pcs > 0 ? pcs : 1.0) : 1.0) : null,
-        packagingUnit: useInventory ? unitName : 'Payment',
+        packagingUnit: f.isOtherTransaction ? 'Other' : (useInventory ? unitName : 'Payment'),
         date: dateStr,
         notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
       );
@@ -548,29 +558,29 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
     // Title label
     final headerTitle = widget.editingRecord == null
         ? (isStock
-            ? (_isAmharic ? 'የመደብር እቃ መዝገብ' : 'Store Entry')
+            ? LanguageService.t('storeEntry')
             : isCustomer
-                ? (_isAmharic ? 'የደንበኛ ብድር መዝገብ' : 'Customer Credit Entry')
+                ? LanguageService.t('customerCreditEntry')
                 : isDelala
-                    ? (_isAmharic ? 'የደላላ መዝገብ' : 'Delala Entry')
-                    : (_isAmharic ? 'የአቅራቢ ብድር መዝገብ' : 'Supplier Credit Entry'))
+                    ? LanguageService.t('delalaEntry')
+                    : LanguageService.t('supplierCreditEntry'))
         : (isStock
-            ? (_isAmharic ? 'የመደብር እቃ አርትዕ' : 'Edit Store Entry')
+            ? LanguageService.t('editStoreEntry')
             : isCustomer
-                ? (_isAmharic ? 'የደንበኛ መዝገብ አርትዕ' : 'Edit Customer Entry')
+                ? LanguageService.t('editCustomerEntry')
                 : isDelala
-                    ? (_isAmharic ? 'የደላላ መዝገብ አርትዕ' : 'Edit Delala Entry')
-                    : (_isAmharic ? 'የአቅራቢ መዝገብ አርትዕ' : 'Edit Supplier Entry'));
+                    ? LanguageService.t('editDelalaEntry')
+                    : LanguageService.t('editSupplierEntry'));
 
     final nameLabel = isCustomer
-        ? (_isAmharic ? 'የደንበኛ ስም *' : 'Customer Name *')
+        ? (_isAmharic ? 'የደንበኛ ስም *' : LanguageService.t('customerNameStar'))
         : isDelala
-            ? (_isAmharic ? 'ስም *' : 'Name *')
+            ? (_isAmharic ? 'ስም *' : LanguageService.t('nameStar'))
             : isStock
-                ? (_isAmharic ? 'የዕቃ ስም *' : 'Item Name *')
-                : (_isAmharic ? 'የአቅራቢ ስም *' : 'Supplier Name *');
+                ? (_isAmharic ? 'የዕቃ ስም *' : LanguageService.t('itemNameStar'))
+                : (_isAmharic ? 'የአቅራቢ ስም *' : LanguageService.t('supplierNameStar'));
 
-    final nameHint = isStock ? 'e.g. 12W Safari' : (_isAmharic ? 'ምሳሌ፡ አህመድ' : 'e.g. Ahmed');
+    final nameHint = isStock ? 'e.g. 12W Safari' : (_isAmharic ? 'ምሳሌ፡ አህመድ' : LanguageService.t('e.gAhmed'));
 
     // Current active line item
     if (_activeItemIndex >= _formItems.length) {
@@ -581,7 +591,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
 
     final isCashBorrow = isDebit && currentItem.isCashBorrow && isDelala;
     final isItemReturn = !isDebit && currentItem.isItemReturn;
-    final bool useInventory = (isDebit && !isCashBorrow) || isStock || isItemReturn;
+    final bool useInventory = !currentItem.isOtherTransaction && ((isDebit && !isCashBorrow) || isStock || isItemReturn);
 
     double calculatedTotal = _calculateItemTotal(currentItem);
 
@@ -746,7 +756,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           _buildFieldLabel(
-                            _isAmharic ? 'የተመዘገቡ ዕቃዎች (ረድፎች)' : 'Formed Items / Rows',
+                            LanguageService.t('formedItemsRows'),
                             isDark,
                           ),
                           Text(
@@ -771,7 +781,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                             final totalSuffix = itemTotal > 0 ? ' (ETB ${_currencyFormat.format(itemTotal)})' : '';
                             final chipText = itName.isNotEmpty
                                 ? '${idx + 1}. $itName$totalSuffix'
-                                : (_isAmharic ? 'ረድፍ ${idx + 1}$totalSuffix' : 'Row ${idx + 1}$totalSuffix');
+                                : LanguageService.t('rowLabel').replaceAll('{index}', '${idx + 1}').replaceAll('{suffix}', totalSuffix);
                             return Padding(
                               padding: const EdgeInsets.only(right: 6),
                               child: InkWell(
@@ -809,33 +819,36 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                       const SizedBox(height: 12),
                     ],
 
-                    // 3. Transaction Type Toggle: Debit (+) Goods vs Credit (-) Payment / Loan Return
-                    _buildFieldLabel(_isAmharic ? 'የመዝገብ ዓይነት' : 'Transaction Type', isDark),
+                    // 3. Transaction Type Toggle: Primary vs Other Transactions
+                    _buildFieldLabel(LanguageService.t('transactionType'), isDark),
                     const SizedBox(height: 6),
                     Row(
                       children: [
                         // Debit (+) Goods / Delivery / Loan Button
                         Expanded(
                           child: InkWell(
-                            onTap: () => setState(() => currentItem.sign = '+'),
+                            onTap: () => setState(() {
+                              currentItem.isOtherTransaction = false;
+                              currentItem.sign = '+';
+                            }),
                             borderRadius: BorderRadius.circular(10),
                             child: Container(
                               height: 44,
                               padding: const EdgeInsets.symmetric(horizontal: 8),
                               decoration: BoxDecoration(
-                                color: isDebit
+                                color: (!currentItem.isOtherTransaction && isDebit)
                                     ? (isDelala
                                         ? (isDark ? Colors.white : Colors.black)
                                         : const Color(0xFF2563EB).withValues(alpha: 0.12))
                                     : inputFill,
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
-                                  color: isDebit
+                                  color: (!currentItem.isOtherTransaction && isDebit)
                                       ? (isDelala
                                           ? (isDark ? Colors.white : Colors.black)
                                           : const Color(0xFF2563EB))
                                       : inputBorder,
-                                  width: isDebit ? 1.8 : 1.0,
+                                  width: (!currentItem.isOtherTransaction && isDebit) ? 1.8 : 1.0,
                                 ),
                               ),
                               child: Row(
@@ -845,18 +858,18 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                     Icon(
                                       Icons.add_shopping_cart,
                                       size: 16,
-                                      color: isDebit ? const Color(0xFF2563EB) : Colors.grey,
+                                      color: (!currentItem.isOtherTransaction && isDebit) ? const Color(0xFF2563EB) : Colors.grey,
                                     ),
                                     const SizedBox(width: 5),
                                   ],
                                   Flexible(
                                     child: Text(
                                       isDelala
-                                          ? (_isAmharic ? 'ደላላ ወሰደ (+)' : 'Delala Took (+)')
+                                          ? (LanguageService.t('delalaTook'))
                                           : (widget.activeTab == 'supplier'
                                                 ? (_isAmharic
-                                                      ? 'ግዢ (+)\nዕቃ ተቀበልን'
-                                                      : 'Purchase (+)\nBought Goods')
+                                                      ? 'ግዢ (+)\nዕቃ'
+                                                      : 'Purchase (+)\nGoods')
                                                 : (widget.activeTab == 'customer'
                                                       ? (_isAmharic
                                                             ? 'ሽያጭ (+)\nዕቃ ሰጠን'
@@ -867,8 +880,8 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontSize: 12,
-                                        fontWeight: isDebit ? FontWeight.w900 : FontWeight.w600,
-                                        color: isDebit
+                                        fontWeight: (!currentItem.isOtherTransaction && isDebit) ? FontWeight.w900 : FontWeight.w600,
+                                        color: (!currentItem.isOtherTransaction && isDebit)
                                             ? (isDelala
                                                 ? (isDark ? Colors.black : Colors.white)
                                                 : (isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB)))
@@ -888,6 +901,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                           child: InkWell(
                             onTap: () {
                               setState(() {
+                                currentItem.isOtherTransaction = false;
                                 currentItem.sign = '-';
                                 if (!_bankOptions.contains(currentItem.typeOrBank)) {
                                   currentItem.typeOrBank = 'CBE';
@@ -899,19 +913,19 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                               height: 44,
                               padding: const EdgeInsets.symmetric(horizontal: 8),
                               decoration: BoxDecoration(
-                                color: !isDebit
+                                color: (!currentItem.isOtherTransaction && !isDebit)
                                     ? (isDelala
                                         ? (isDark ? Colors.white : Colors.black)
                                         : const Color(0xFFB45309).withValues(alpha: 0.12))
                                     : inputFill,
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
-                                  color: !isDebit
+                                  color: (!currentItem.isOtherTransaction && !isDebit)
                                       ? (isDelala
                                           ? (isDark ? Colors.white : Colors.black)
                                           : const Color(0xFFB45309))
                                       : inputBorder,
-                                  width: !isDebit ? 1.8 : 1.0,
+                                  width: (!currentItem.isOtherTransaction && !isDebit) ? 1.8 : 1.0,
                                 ),
                               ),
                               child: Row(
@@ -921,7 +935,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                     Icon(
                                       Icons.account_balance,
                                       size: 16,
-                                      color: !isDebit ? const Color(0xFFB45309) : Colors.grey,
+                                      color: (!currentItem.isOtherTransaction && !isDebit) ? const Color(0xFFB45309) : Colors.grey,
                                     ),
                                     const SizedBox(width: 5),
                                   ],
@@ -929,8 +943,8 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                     child: Text(
                                       isDelala
                                           ? (_isAmharic
-                                                ? 'ደላላ መለሰ / ከፈለ (-)'
-                                                : 'Delala Returned / Paid (-)')
+                                                ? 'ክፍያ (-)\nከደላላ ተቀበልን'
+                                                : 'Payment (-)\nDelala Paid')
                                           : (widget.activeTab == 'supplier'
                                                 ? (_isAmharic
                                                       ? 'ክፍያ (-)\nለአቅራቢ ከፈልን'
@@ -945,8 +959,8 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontSize: 12,
-                                        fontWeight: !isDebit ? FontWeight.w900 : FontWeight.w600,
-                                        color: !isDebit
+                                        fontWeight: (!currentItem.isOtherTransaction && !isDebit) ? FontWeight.w900 : FontWeight.w600,
+                                        color: (!currentItem.isOtherTransaction && !isDebit)
                                             ? (isDelala
                                                 ? (isDark ? Colors.black : Colors.white)
                                                 : (isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309)))
@@ -961,7 +975,152 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                         ),
                       ],
                     ),
-                    if (isDebit && isDelala) ...[
+                    const SizedBox(height: 8),
+
+                    // Unified "Other Transactions" (ሌሎች ግብይቶች) Option
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          currentItem.isOtherTransaction = true;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        height: 42,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: currentItem.isOtherTransaction
+                              ? (isDark ? const Color(0xFF312E81) : const Color(0xFFEEF2FF))
+                              : inputFill,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: currentItem.isOtherTransaction
+                                ? const Color(0xFF6366F1)
+                                : inputBorder,
+                            width: currentItem.isOtherTransaction ? 1.8 : 1.0,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.swap_horiz_rounded,
+                              size: 18,
+                              color: currentItem.isOtherTransaction
+                                  ? const Color(0xFF6366F1)
+                                  : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              LanguageService.t('otherTransactions'),
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: currentItem.isOtherTransaction ? FontWeight.w900 : FontWeight.w600,
+                                color: currentItem.isOtherTransaction
+                                    ? (isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4338CA))
+                                    : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Direction Selector for Other Transactions: Income (+) vs Expense (-)
+                    if (currentItem.isOtherTransaction) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          // Income / Received (+)
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setState(() => currentItem.sign = '+'),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                height: 38,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: currentItem.sign == '+'
+                                      ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                                      : inputFill,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: currentItem.sign == '+' ? const Color(0xFF10B981) : inputBorder,
+                                    width: currentItem.sign == '+' ? 1.6 : 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add_circle,
+                                      size: 15,
+                                      color: currentItem.sign == '+' ? const Color(0xFF10B981) : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      LanguageService.t('incomeReceived'),
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: currentItem.sign == '+' ? FontWeight.bold : FontWeight.w500,
+                                        color: currentItem.sign == '+'
+                                            ? (isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857))
+                                            : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Expense / Paid (-)
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setState(() => currentItem.sign = '-'),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                height: 38,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: currentItem.sign == '-'
+                                      ? const Color(0xFFE11D48).withValues(alpha: 0.15)
+                                      : inputFill,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: currentItem.sign == '-' ? const Color(0xFFE11D48) : inputBorder,
+                                    width: currentItem.sign == '-' ? 1.6 : 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.remove_circle,
+                                      size: 15,
+                                      color: currentItem.sign == '-' ? const Color(0xFFE11D48) : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      LanguageService.t('expensePaid'),
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: currentItem.sign == '-' ? FontWeight.bold : FontWeight.w500,
+                                        color: currentItem.sign == '-'
+                                            ? (isDark ? const Color(0xFFFDA4AF) : const Color(0xFFBE123C))
+                                            : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
+                    if (!currentItem.isOtherTransaction && isDebit && isDelala) ...[
                       const SizedBox(height: 8),
                       Row(
                         children: [
@@ -986,7 +1145,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                   ),
                                 ),
                                 child: Text(
-                                  _isAmharic ? 'ዕቃ ወሰደ' : 'Took Items',
+                                  LanguageService.t('tookItems'),
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: !currentItem.isCashBorrow ? FontWeight.bold : FontWeight.normal,
@@ -1023,7 +1182,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                   ),
                                 ),
                                 child: Text(
-                                  _isAmharic ? 'ብር / ባንክ ወሰደ' : 'Took Cash / Bank',
+                                  LanguageService.t('tookCashBank'),
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: currentItem.isCashBorrow ? FontWeight.bold : FontWeight.normal,
@@ -1036,7 +1195,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                         ],
                       ),
                     ],
-                    if (!isDebit) ...[
+                    if (!currentItem.isOtherTransaction && !isDebit) ...[
                       const SizedBox(height: 8),
                       Row(
                         children: [
@@ -1083,7 +1242,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                       const SizedBox(width: 4),
                                     ],
                                     Text(
-                                      _isAmharic ? 'ብር / ባንክ ከፈለ' : 'Paid Money / Bank',
+                                      LanguageService.t('paidMoneyBank'),
                                       style: TextStyle(
                                         fontSize: 11,
                                         fontWeight: !currentItem.isItemReturn
@@ -1142,7 +1301,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                       const SizedBox(width: 4),
                                     ],
                                     Text(
-                                      _isAmharic ? 'ዕቃ መለሰ' : 'Returned Items',
+                                      LanguageService.t('returnedItems'),
                                       style: TextStyle(
                                         fontSize: 11,
                                         fontWeight: currentItem.isItemReturn
@@ -1168,7 +1327,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
 
                   // 3B. Stock-only toggle: Stock In (+) / Stock Out (-)
                   if (isStock) ...[
-                    _buildFieldLabel(_isAmharic ? 'የዕቃ ዝውውር' : 'Stock Movement', isDark),
+                    _buildFieldLabel(LanguageService.t('stockMovement'), isDark),
                     const SizedBox(height: 6),
                     Row(
                       children: [
@@ -1201,7 +1360,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                   const SizedBox(width: 5),
                                   Flexible(
                                     child: Text(
-                                      _isAmharic ? 'ዕቃ ገቢ (+)' : 'Stock In (+)',
+                                      LanguageService.t('stockIn'),
                                       textAlign: TextAlign.center,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
@@ -1251,7 +1410,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                   const SizedBox(width: 5),
                                   Flexible(
                                     child: Text(
-                                      _isAmharic ? 'ዕቃ ወጪ (-)' : 'Stock Out (-)',
+                                      LanguageService.t('stockOut'),
                                       textAlign: TextAlign.center,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
@@ -1275,8 +1434,75 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                     const SizedBox(height: 14),
                   ],
 
-                  // 4A. Inventory fields (Goods). Shown for all debit records, item returns, AND all stock records
-                  if (useInventory) ...[
+                  // 4A. Other Transactions (ሌሎች ግብይቶች)
+                  if (currentItem.isOtherTransaction) ...[
+                    _buildFieldLabel(_isAmharic ? 'የግብይት መግለጫ / ስም' : 'Transaction Description / Name', isDark),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: currentItem.nameController,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: _isAmharic ? 'ምሳሌ፡ ሌሎች ግብይቶች ወይም ማስተካከያ' : 'e.g. Other Transactions or Adjustment',
+                        hintStyle: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                        ),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        filled: true,
+                        fillColor: inputFill,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: inputBorder)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: inputBorder)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Amount in ETB
+                    _buildFieldLabel(_isAmharic ? 'መጠን (ብር) *' : 'Amount (ETB) *', isDark),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: currentItem.priceController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (_) => setState(() {}),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: currentItem.sign == '+'
+                            ? (isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857))
+                            : (isDark ? const Color(0xFFFDA4AF) : const Color(0xFFBE123C)),
+                      ),
+                      decoration: InputDecoration(
+                        hintText: '0.00',
+                        prefixText: 'ETB ',
+                        prefixStyle: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: currentItem.sign == '+' ? const Color(0xFF10B981) : const Color(0xFFE11D48),
+                        ),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        filled: true,
+                        fillColor: inputFill,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: inputBorder)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: inputBorder)),
+                      ),
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return _isAmharic ? 'እባክዎ መጠን ያስገቡ' : 'Please enter amount';
+                        }
+                        final parsed = double.tryParse(val.trim());
+                        if (parsed == null || parsed <= 0) {
+                          return _isAmharic ? 'እባክዎ ትክክለኛ መጠን ያስገቡ' : 'Please enter valid amount';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                  ] else if (useInventory) ...[
                     // Item Field (Clean Single Label matching Stitch UI)
                     _buildFieldLabel(
                       isItemReturn
@@ -1392,7 +1618,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                             setState(() {});
                           },
                           validator: (v) =>
-                              v == null || v.trim().isEmpty ? (_isAmharic ? 'እባክዎ የዕቃ ስም ያስገቡ' : 'Please enter item name') : null,
+                              v == null || v.trim().isEmpty ? (LanguageService.t('enterItemName')) : null,
                         );
                       },
                     ),
@@ -1426,7 +1652,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                 const SizedBox(width: 6),
                                 Expanded(
                                   child: Text(
-                                    _isAmharic ? 'በመደብር ያለው፡' : 'In Store:',
+                                    LanguageService.t('inStore'),
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
@@ -1438,10 +1664,10 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                                 const SizedBox(width: 6),
                                 Text(
                                   !hasName
-                                      ? (_isAmharic ? '0 በመደብሩ' : '0 in store')
+                                      ? (LanguageService.t('zeroInStore'))
                                       : curCtns > 0
-                                          ? '${curCtns.toInt()} ${_isAmharic ? "ካርቶን" : "Ctns"} (${curPcs.toInt()} ${_isAmharic ? "ፍሬ" : "pcs"})'
-                                          : (_isAmharic ? '0 በመደብሩ' : '0 in store'),
+                                          ? '${curCtns.toInt()} ${LanguageService.t('ctns')} (${curPcs.toInt()} ${LanguageService.t('pcsShort')})'
+                                          : (LanguageService.t('zeroInStore')),
                                   style: TextStyle(
                                     fontSize: 11.5,
                                     fontWeight: FontWeight.w800,
@@ -1459,7 +1685,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                     const SizedBox(height: 14),
 
                     // Quantity (Cartons / Units) + Unit Selector
-                    _buildFieldLabel(_isAmharic ? 'ብዛት' : 'Quantity', isDark),
+                    _buildFieldLabel(LanguageService.t('quantity'), isDark),
                     const SizedBox(height: 6),
                     Row(
                       children: [
@@ -1556,7 +1782,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
 
                     // Pieces per Carton (visible if Carton)
                     if (currentItem.packagingUnit == 'Carton') ...[
-                      _buildFieldLabel(_isAmharic ? 'ፍሬ በካርቶን' : 'Pieces per Carton', isDark),
+                      _buildFieldLabel(LanguageService.t('piecesPerCtn'), isDark),
                       const SizedBox(height: 6),
                       TextFormField(
                         controller: currentItem.pcsController,
@@ -1584,7 +1810,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                     ],
 
                     // Unit Price (ETB)
-                    _buildFieldLabel(_isAmharic ? 'የአንዱ ዋጋ (ብር)' : 'Unit Price (ETB)', isDark),
+                    _buildFieldLabel(LanguageService.t('unitPrice'), isDark),
                     const SizedBox(height: 6),
                     TextFormField(
                       controller: currentItem.priceController,
@@ -1605,7 +1831,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                     const SizedBox(height: 14),
 
                     // Total Price (ETB) Auto-Computed
-                    _buildFieldLabel(_isAmharic ? 'ጠቅላላ ዋጋ (ብር)' : 'Total Price (ETB)', isDark),
+                    _buildFieldLabel(LanguageService.t('totalAmount'), isDark),
                     const SizedBox(height: 6),
                     Container(
                       height: 46,
@@ -1632,8 +1858,8 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                     // 4B. If Credit (-) Payment / Bank Transfer / Loan Repayment OR Cash Borrow
                     _buildFieldLabel(
                       isDelala
-                          ? (_isAmharic ? 'የትኛው ባንክ?' : 'Which Bank?')
-                          : (_isAmharic ? 'የተከፈለበት ባንክ' : 'Which Bank Transfer?'),
+                          ? (LanguageService.t('whichBank'))
+                          : (LanguageService.t('whichBank')),
                       isDark,
                     ),
                     const SizedBox(height: 6),
@@ -1684,7 +1910,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                           color: theme.colorScheme.onSurface,
                         ),
                         decoration: InputDecoration(
-                          labelText: _isAmharic ? 'የባንክ ወይም የክፍያ ስም' : 'Specify Bank / Channel',
+                          labelText: LanguageService.t('specifyBankChannel'),
                           labelStyle: TextStyle(
                             fontSize: 11,
                             color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
@@ -1703,8 +1929,8 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                     // Payment / Borrow Amount (ETB)
                     _buildFieldLabel(
                       isDebit
-                          ? (_isAmharic ? 'የተወሰደ ብር' : 'Borrowed Amount (ETB)')
-                          : (_isAmharic ? 'የተከፈለ ብር' : 'Payment Amount (ETB)'),
+                          ? (LanguageService.t('borrowedAmount'))
+                          : (LanguageService.t('paymentAmount')),
                       isDark,
                     ),
                     const SizedBox(height: 6),
@@ -1734,7 +1960,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                   ],
 
                   // 5. Date Field with Ethiopian text option + Calendar Picker button
-                  _buildFieldLabel(_isAmharic ? 'ቀን *' : 'Date *', isDark),
+                  _buildFieldLabel(LanguageService.t('dateStar'), isDark),
                   const SizedBox(height: 6),
                   InkWell(
                     onTap: _pickEthiopianDate,
@@ -1766,13 +1992,13 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                   const SizedBox(height: 14),
 
                   // 6. Note (optional)
-                  _buildFieldLabel(_isAmharic ? 'ማስታወሻ' : 'Note (optional)', isDark),
+                  _buildFieldLabel(LanguageService.t('noteOptional'), isDark),
                   const SizedBox(height: 6),
                   TextFormField(
                     controller: _notesController,
                     style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
                     decoration: InputDecoration(
-                      hintText: _isAmharic ? 'ምሳሌ፦ ደረሰኝ ቁጥር' : 'e.g. Receipt # or reference',
+                      hintText: LanguageService.t('noteHint'),
                       hintStyle: TextStyle(
                         fontSize: 12.5,
                         color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
@@ -1799,7 +2025,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                             onPressed: () => _removeItem(_activeItemIndex),
                             icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFEF4444)),
                             label: Text(
-                              _isAmharic ? 'ይህን ዕቃ ሰርዝ' : 'Delete this item',
+                              LanguageService.t('deleteThisItem'),
                               style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12),
                             ),
                           )
@@ -1869,7 +2095,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                           onPressed: _addItem,
                           icon: const Icon(Icons.add, size: 16),
                           label: Text(
-                            _isAmharic ? '+ ሌላ ረድፍ ጨምር' : '+ Add Another Row',
+                            LanguageService.t('addAnotherRow'),
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
                           ),
                           style: TextButton.styleFrom(foregroundColor: const Color(0xFF2563EB)),
@@ -1898,7 +2124,7 @@ class _RecordFormDialogState extends State<RecordFormDialog> {
                         ),
                       ),
                       child: Text(
-                        _isAmharic ? 'መዝግብ' : 'Save',
+                        LanguageService.t('save'),
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
@@ -1944,6 +2170,7 @@ class LineItemFormItem {
   double? customs;
   bool isItemReturn;
   bool isCashBorrow;
+  bool isOtherTransaction;
 
   LineItemFormItem({
     required this.id,
@@ -1959,6 +2186,7 @@ class LineItemFormItem {
     String customBankName = '',
     this.isItemReturn = false,
     this.isCashBorrow = false,
+    this.isOtherTransaction = false,
   }) {
     nameController = TextEditingController(text: name);
     qtyController = TextEditingController(
@@ -2022,9 +2250,18 @@ class LineItemFormItem {
       typeOrBank = 'Other';
       if (rawBank != 'Other Bank') customBankName = rawBank;
     }
+    final bool isOther = item.customType == 'Other Transactions' ||
+        item.customType == 'Other' ||
+        item.name == 'Other Transactions' ||
+        item.name == 'ሌሎች ግብይቶች' ||
+        item.name == 'delalaReturnedPaid' ||
+        item.name == 'purchaseBoughtGoods';
+
     return LineItemFormItem(
       id: item.id,
-      name: item.name,
+      name: (item.name == 'delalaReturnedPaid' || item.name == 'purchaseBoughtGoods')
+          ? (LanguageService.isAmharic ? 'ሌሎች ግብይቶች' : 'Other Transactions')
+          : item.name,
       unitPrice: item.unitPrice,
       quantity: item.quantity,
       sign: item.sign,
@@ -2036,6 +2273,7 @@ class LineItemFormItem {
       customs: item.customs,
       isItemReturn: isItemReturn,
       isCashBorrow: isCashBorrow,
+      isOtherTransaction: isOther,
     );
   }
 

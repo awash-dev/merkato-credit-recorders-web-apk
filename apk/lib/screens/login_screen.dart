@@ -5,7 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/neon_database_service.dart';
 import '../services/language_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/telebirr_background.dart';
+import '../widgets/app_components.dart';
 import 'main_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -67,7 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (phone.isEmpty) {
       setState(() {
-        _errorMessage = 'Please enter your phone number';
+        _errorMessage = LanguageService.t('pleaseEnterPhone');
       });
       return;
     }
@@ -75,14 +77,14 @@ class _LoginScreenState extends State<LoginScreen> {
     if (NeonDatabaseService.normalizePhone(phone) == null) {
       setState(() {
         _errorMessage =
-            'Enter a valid Ethiopian phone number (e.g. 0911111111)';
+            LanguageService.t('validEthiopianPhone');
       });
       return;
     }
 
     if (password.isEmpty) {
       setState(() {
-        _errorMessage = _isAmharic ? 'እባክዎ የይለፍ ቃል ያስገቡ' : 'Please enter your password';
+        _errorMessage = LanguageService.t('pleaseEnterPassword');
       });
       return;
     }
@@ -122,9 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
             msg.contains('ClientException') ||
             msg.contains('timeout') ||
             msg.contains('No address associated with hostname')) {
-          _errorMessage = _isAmharic
-              ? 'የኢንተርኔት ግንኙነት ችግር ተከስቷል። እባክዎ እንደገና ይሞክሩ።'
-              : 'Network error. Please check your internet connection.';
+          _errorMessage = LanguageService.t('networkError');
         } else {
           _errorMessage = msg;
         }
@@ -154,121 +154,151 @@ class _LoginScreenState extends State<LoginScreen> {
           statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
         ),
         actions: [
-          TextButton.icon(
-            icon: const Icon(Icons.language, size: 18),
-            label: Text(_isAmharic ? 'English' : 'አማርኛ'),
-            style: TextButton.styleFrom(
-              foregroundColor: isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0, top: 8.0),
+            child: AppLanguagePill(
+              onToggle: () => setState(() {}),
             ),
-            onPressed: () async {
-              await LanguageService.setLanguage(_isAmharic ? 'en' : 'am');
-              setState(() {});
-            },
           ),
-          const SizedBox(width: 8),
         ],
       ),
       body: TelebirrBackground(
         isDark: isDark,
         child: SafeArea(
           child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24.0,
-              vertical: 16.0,
-            ),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // App Icon
-                  Center(
-                    child: Container(
-                      width: 68,
-                      height: 68,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2563EB),
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF2563EB)
-                                .withValues(alpha: 0.25),
-                            blurRadius: 14,
-                            offset: const Offset(0, 5),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24.0,
+                vertical: 16.0,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Brand Icon & Header
+                    Center(
+                      child: Container(
+                        width: 76,
+                        height: 76,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF2563EB),
+                              Color(0xFF1D4ED8),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.menu_book_rounded,
-                        color: Colors.white,
-                        size: 36,
+                          borderRadius: BorderRadius.circular(22),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF2563EB).withValues(alpha: 0.35),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.menu_book_rounded,
+                          color: Colors.white,
+                          size: 40,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    _isAmharic ? 'መርካቶ የብድር መዝገብ' : 'Merkato Credit Record',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: theme.colorScheme.onSurface,
-                      letterSpacing: -0.4,
+                    const SizedBox(height: 18),
+                    Text(
+                      LanguageService.t('appName', defaultValue: 'Merkato Credit Record'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 23,
+                        fontWeight: FontWeight.w800,
+                        color: theme.colorScheme.onSurface,
+                        letterSpacing: -0.5,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 24),
+                    const SizedBox(height: 6),
+                    Text(
+                      _isAmharic
+                          ? 'የፋይናንስና የዕዳ መዝገብ አስተዳደር'
+                          : 'Modern Business Credit & Ledger',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
 
-                  // Login Card
-                  Card(
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: BorderSide(
-                        color: isDark
-                            ? const Color(0xFF27272A)
-                            : Colors.grey.shade300,
-                      ),
-                    ),
-                    color: theme.colorScheme.surface,
-                    child: Padding(
+                    // Login Card
+                    AppCard(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 20.0,
-                        vertical: 22.0,
+                        horizontal: 24.0,
+                        vertical: 26.0,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            _isAmharic ? 'ግባ' : 'Sign In',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: theme.colorScheme.onSurface,
-                            ),
+                          Row(
+                            children: [
+                              Container(
+                                width: 4,
+                                height: 18,
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryBlue,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                LanguageService.t('signIn'),
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 20),
 
                           if (_errorMessage != null) ...[
                             Container(
-                              padding: const EdgeInsets.all(10),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: AppTheme.roseDangerLight,
+                                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                                border: Border.all(
+                                  color: AppTheme.roseDanger.withValues(alpha: 0.3),
+                                  width: 1,
+                                ),
+                              ),
                               child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
-                                  const SizedBox(width: 8),
+                                  const Icon(
+                                    Icons.error_outline_rounded,
+                                    color: AppTheme.roseDanger,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
                                       _errorMessage!,
                                       style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Color(0xFF991B1B),
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppTheme.roseDangerDark,
+                                        height: 1.3,
                                       ),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 18),
                           ],
 
                           // AutofillGroup enables Samsung Pass, Google Password Manager, Apple Keychain, and browser autofill
@@ -281,11 +311,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                   controller: _phoneController,
                                   keyboardType: TextInputType.phone,
                                   style: TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 14.5,
                                     fontWeight: FontWeight.w600,
-                                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                    color: isDark ? Colors.white : AppTheme.lightTextPrimary,
                                   ),
-                                  cursorColor: const Color(0xFF2563EB),
+                                  cursorColor: AppTheme.primaryBlue,
                                   autofillHints: const [
                                     AutofillHints.username,
                                     AutofillHints.telephoneNumber,
@@ -297,44 +327,39 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   ],
                                   decoration: InputDecoration(
-                                    labelText: _isAmharic ? 'ስልክ ቁጥር' : 'Phone Number',
-                                    hintText: _isAmharic ? 'ምሳሌ፦ 0911223344' : 'e.g. 0911223344',
-                                    prefixIcon: const Icon(
-                                      Icons.phone_outlined,
+                                    labelText: LanguageService.t('phoneNumber'),
+                                    hintText: LanguageService.t('e.gAhmed'),
+                                    prefixIcon: Icon(
+                                      Icons.phone_iphone_rounded,
                                       size: 20,
-                                    ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 12,
+                                      color: isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary,
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 14),
+                                const SizedBox(height: 16),
 
                                 // Password Field
                                 TextField(
                                   controller: _passwordController,
                                   obscureText: _obscurePassword,
                                   style: TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 14.5,
                                     fontWeight: FontWeight.w600,
-                                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                    color: isDark ? Colors.white : AppTheme.lightTextPrimary,
                                   ),
-                                  cursorColor: const Color(0xFF2563EB),
+                                  cursorColor: AppTheme.primaryBlue,
                                   autofillHints: const [
                                     AutofillHints.password,
                                   ],
                                   textInputAction: TextInputAction.done,
                                   onSubmitted: (_) => _handleLogin(),
                                   decoration: InputDecoration(
-                                    labelText: _isAmharic ? 'የይለፍ ቃል' : 'Password',
+                                    labelText: LanguageService.t('password'),
                                     hintText: '••••••••',
-                                    prefixIcon: const Icon(
-                                      Icons.lock_outline,
+                                    prefixIcon: Icon(
+                                      Icons.lock_outline_rounded,
                                       size: 20,
+                                      color: isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary,
                                     ),
                                     suffixIcon: IconButton(
                                       icon: Icon(
@@ -343,8 +368,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                             : Icons.visibility_off_outlined,
                                         size: 20,
                                         color: isDark
-                                            ? const Color(0xFF94A3B8)
-                                            : const Color(0xFF64748B),
+                                            ? AppTheme.darkTextSecondary
+                                            : AppTheme.lightTextSecondary,
                                       ),
                                       onPressed: () {
                                         setState(
@@ -352,23 +377,16 @@ class _LoginScreenState extends State<LoginScreen> {
                                         );
                                       },
                                     ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 12,
-                                    ),
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 14),
 
-                          // Save / Remember Password Option (Samsung Pass, Google Autofill & App Memory)
+                          // Save / Remember Password Option
                           InkWell(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                             onTap: () {
                               setState(() {
                                 _rememberPassword = !_rememberPassword;
@@ -383,10 +401,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                     width: 20,
                                     child: Checkbox(
                                       value: _rememberPassword,
-                                      activeColor: const Color(0xFF2563EB),
+                                      activeColor: AppTheme.primaryBlue,
                                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(4),
+                                        borderRadius: BorderRadius.circular(5),
                                       ),
                                       onChanged: (val) {
                                         setState(() {
@@ -395,39 +413,37 @@ class _LoginScreenState extends State<LoginScreen> {
                                       },
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 10),
                                   Expanded(
                                     child: Wrap(
                                       crossAxisAlignment: WrapCrossAlignment.center,
-                                      spacing: 6,
+                                      spacing: 8,
                                       runSpacing: 4,
                                       children: [
                                         Text(
-                                          _isAmharic
-                                              ? 'የይለፍ ቃል አስቀምጥ'
-                                              : 'Save Password',
+                                          LanguageService.t('savePassword', defaultValue: 'Save password'),
                                           style: TextStyle(
-                                            fontSize: 12.5,
+                                            fontSize: 13,
                                             fontWeight: FontWeight.w600,
                                             color: theme.colorScheme.onSurface,
                                           ),
                                         ),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFF2563EB).withValues(alpha: 0.1),
-                                            borderRadius: BorderRadius.circular(4),
+                                            color: AppTheme.primaryBlue.withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                                             border: Border.all(
-                                              color: const Color(0xFF2563EB).withValues(alpha: 0.25),
+                                              color: AppTheme.primaryBlue.withValues(alpha: 0.25),
                                               width: 0.8,
                                             ),
                                           ),
                                           child: const Text(
-                                            'Samsung Pass / Google',
+                                            'Samsung / Google',
                                             style: TextStyle(
-                                              fontSize: 9.5,
-                                              fontWeight: FontWeight.bold,
-                                              color: Color(0xFF2563EB),
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppTheme.primaryBlue,
                                             ),
                                           ),
                                         ),
@@ -438,50 +454,83 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 22),
 
                           // Submit Button
                           SizedBox(
-                            height: 46,
+                            height: 48,
                             child: ElevatedButton(
                               onPressed: _isLoading ? null : _handleLogin,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF2563EB),
+                                backgroundColor: AppTheme.primaryBlue,
                                 foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
                                 elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                                ),
                               ),
                               child: _isLoading
                                   ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
+                                      width: 22,
+                                      height: 22,
                                       child: CircularProgressIndicator(
-                                        strokeWidth: 2,
+                                        strokeWidth: 2.2,
                                         color: Colors.white,
                                       ),
                                     )
-                                  : Text(
-                                      _isAmharic ? 'ግባ' : 'Sign In',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
+                                  : Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          LanguageService.t('signIn'),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 15,
+                                            letterSpacing: 0.2,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Icon(Icons.arrow_forward_rounded, size: 18),
+                                      ],
                                     ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 24),
+
+                    // Security Trust Footer
+                    Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.shield_outlined,
+                            size: 14,
+                            color: isDark ? AppTheme.darkTextTertiary : AppTheme.lightTextTertiary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _isAmharic
+                                ? 'የተጠበቀ የፋይናንስ ዳታ · Bank-Grade Encryption'
+                                : 'Protected Business Data · Encrypted',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? AppTheme.darkTextTertiary : AppTheme.lightTextTertiary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 }

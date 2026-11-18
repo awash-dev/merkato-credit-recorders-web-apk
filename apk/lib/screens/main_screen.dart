@@ -15,10 +15,13 @@ import 'statement_screen.dart';
 import '../models/inventory_product.dart';
 import 'new_product_dialog.dart';
 import 'stock_transaction_dialog.dart';
+import 'stock_transfer_dialog.dart';
 import 'product_history_dialog.dart';
 import 'edit_product_dialog.dart';
 import 'admin_users_screen.dart';
 import '../widgets/telebirr_background.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_components.dart';
 
 class MainScreen extends StatefulWidget {
   final AppUser currentUser;
@@ -77,7 +80,10 @@ class _MainScreenState extends State<MainScreen> {
     // and the party/delala tabs are hidden from the bottom bar.
     _currentTabIndex = widget.currentUser.isStorekeeper ? 3 : 0;
     if (widget.currentUser.isStorekeeper) {
-      _selectedStoreId = widget.currentUser.storeId;
+      _selectedStoreId = widget.currentUser.storeId ??
+          (widget.currentUser.assignedStoreIds.isNotEmpty
+              ? widget.currentUser.assignedStoreIds.first
+              : null);
     } else {
       _selectedStoreId = 'all';
     }
@@ -121,31 +127,17 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   String get _currentTabLabel {
-    if (_isAmharic) {
-      switch (_currentTabIndex) {
-        case 0:
-          return 'የደንበኛ ብድር';
-        case 1:
-          return 'የአቅራቢ ብድር';
-        case 2:
-          return 'የደላላ ሂሳብ';
-        case 3:
-          return 'የመደብር እቃዎች';
-        default:
-          return 'የደንበኛ ብድር';
-      }
-    }
     switch (_currentTabIndex) {
       case 0:
-        return 'Customer Credit';
+        return LanguageService.t('tabCustomerCredit');
       case 1:
-        return 'Supplier Credit';
+        return LanguageService.t('tabSupplierCredit');
       case 2:
-        return 'Delala Ledger';
+        return LanguageService.t('tabDelalaLedger');
       case 3:
-        return 'Store Inventory';
+        return LanguageService.t('tabStoreInventory');
       default:
-        return 'Customer Credit';
+        return LanguageService.t('tabCustomerCredit');
     }
   }
 
@@ -157,14 +149,14 @@ class _MainScreenState extends State<MainScreen> {
       if (match.isNotEmpty) return match.first.name;
     }
     if (_selectedStoreId == 'all') {
-      return _isAmharic ? 'ሁሉም መደብሮች' : 'All Stores (Central)';
+      return LanguageService.t('allStoresCentral');
     }
 
     final ownName = widget.currentUser.storeName;
     if (ownName != null && ownName.isNotEmpty) return ownName;
 
     final match = _stores.where((s) => s.id == widget.currentUser.storeId);
-    return match.isNotEmpty ? match.first.name : (_isAmharic ? 'መደብር አልተመረጠም' : 'No store assigned');
+    return match.isNotEmpty ? match.first.name : LanguageService.t('noStoreAssigned');
   }
 
   Future<void> _loadStoresAndRecords() async {
@@ -179,7 +171,8 @@ class _MainScreenState extends State<MainScreen> {
         targetStoreId = _selectedStoreId ?? widget.currentUser.storeId;
         if ((targetStoreId == null || targetStoreId.isEmpty) &&
             stores.isNotEmpty) {
-          targetStoreId = stores.first.id;
+          final assigned = stores.where((s) => widget.currentUser.canAccessStore(s.id)).toList();
+          targetStoreId = assigned.isNotEmpty ? assigned.first.id : stores.first.id;
         }
         _selectedStoreId = targetStoreId;
       }
@@ -212,7 +205,8 @@ class _MainScreenState extends State<MainScreen> {
         targetStoreId = _selectedStoreId ?? widget.currentUser.storeId;
         if ((targetStoreId == null || targetStoreId.isEmpty) &&
             _stores.isNotEmpty) {
-          targetStoreId = _stores.first.id;
+          final assigned = _stores.where((s) => widget.currentUser.canAccessStore(s.id)).toList();
+          targetStoreId = assigned.isNotEmpty ? assigned.first.id : _stores.first.id;
         }
         _selectedStoreId = targetStoreId;
       }
@@ -282,7 +276,21 @@ class _MainScreenState extends State<MainScreen> {
         final matchTitle = r.title.toLowerCase().contains(q);
         final matchNotes = r.notes?.toLowerCase().contains(q) ?? false;
         final matchItems = r.items.any(
-          (it) => it.name.toLowerCase().contains(q),
+          (it) {
+            final nameMatch = it.name.toLowerCase().contains(q);
+            final customMatch = it.customType?.toLowerCase().contains(q) ?? false;
+            final isOther = it.customType == 'Other Transactions' ||
+                it.customType == 'Other' ||
+                it.name == 'Other Transactions' ||
+                it.name == 'ሌሎች ግብይቶች' ||
+                it.name == 'delalaReturnedPaid' ||
+                it.name == 'purchaseBoughtGoods';
+            final otherMatch = isOther &&
+                ('ሌሎች ግብይቶች'.contains(q) ||
+                    'other transactions'.contains(q) ||
+                    'other'.contains(q));
+            return nameMatch || customMatch || otherMatch;
+          },
         );
         if (!matchTitle && !matchNotes && !matchItems) return false;
       }
@@ -384,9 +392,7 @@ class _MainScreenState extends State<MainScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                _isAmharic
-                    ? '"${existing.title}" ላይ ዝርዝሩ ተጨምሮ ተመዝግቧል'
-                    : 'Added transaction to "${existing.title}"',
+                LanguageService.t('transactionAdded').replaceAll('{title}', existing.title),
               ),
               backgroundColor: const Color(0xFF2563EB),
             ),
@@ -401,9 +407,7 @@ class _MainScreenState extends State<MainScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                _isAmharic
-                    ? '"${result.title}" በተሳካ ሁኔታ ተመዝግቧል'
-                    : 'Saved "${result.title}" successfully',
+                LanguageService.t('savedSuccessfully').replaceAll('{title}', result.title),
               ),
               backgroundColor: const Color(0xFF2563EB),
             ),
@@ -453,12 +457,12 @@ class _MainScreenState extends State<MainScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Record'),
-        content: Text('Delete "${record.title}" from ledger?'),
+        title: Text(LanguageService.t('deleteRecord')),
+        content: Text(LanguageService.t('deleteRecordConfirm').replaceAll('{title}', record.title)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(LanguageService.t('cancel')),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -466,7 +470,7 @@ class _MainScreenState extends State<MainScreen> {
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
+            child: Text(LanguageService.t('delete')),
           ),
         ],
       ),
@@ -477,7 +481,7 @@ class _MainScreenState extends State<MainScreen> {
       _reloadRecordsOnly();
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Deleted "${record.title}"')));
+          .showSnackBar(SnackBar(content: Text(LanguageService.t('deletedRecord').replaceAll('{title}', record.title))));
     }
   }
 
@@ -524,9 +528,7 @@ class _MainScreenState extends State<MainScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                _isAmharic
-                    ? '"${record.title}" ላይ ማወራረጃ ተመዝግቧል'
-                    : 'Audit entry added for "${record.title}"',
+                LanguageService.t('auditEntryAdded').replaceAll('{title}', record.title),
               ),
               backgroundColor: const Color(0xFF16A34A),
             ),
@@ -607,9 +609,7 @@ class _MainScreenState extends State<MainScreen> {
                   color: Color(0xFF16A34A),
                 ),
                 title: Text(
-                  _isAmharic
-                      ? 'ማወራረጃ መዝግብ (ዕቃ / ብር)'
-                      : 'Add Audit Entry (Items / Money)',
+                  LanguageService.t('addAuditEntry'),
                 ),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -621,7 +621,7 @@ class _MainScreenState extends State<MainScreen> {
                   Icons.table_chart_outlined,
                   color: Color(0xFF2563EB),
                 ),
-                title: const Text('View Full Statement & PDF'),
+                title: Text(LanguageService.t('viewFullStatementPDF')),
                 onTap: () {
                   Navigator.pop(ctx);
                   _openStatement(record);
@@ -632,7 +632,7 @@ class _MainScreenState extends State<MainScreen> {
                   Icons.edit_outlined,
                   color: Color(0xFF4059AA),
                 ),
-                title: const Text('Edit Entry'),
+                title: Text(LanguageService.t('editEntry')),
                 onTap: () {
                   Navigator.pop(ctx);
                   _openEditRecordDialog(record);
@@ -643,7 +643,7 @@ class _MainScreenState extends State<MainScreen> {
                   Icons.delete_outline,
                   color: Color(0xFFBA1A1A),
                 ),
-                title: const Text('Delete Entry'),
+                title: Text(LanguageService.t('deleteEntry')),
                 onTap: () {
                   Navigator.pop(ctx);
                   _deleteRecord(record);
@@ -673,86 +673,102 @@ class _MainScreenState extends State<MainScreen> {
     Color? valueColor,
     EdgeInsetsGeometry? padding,
   }) {
-    final textColor = isDark ? Colors.white : Colors.black;
-    final subColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569);
-    final borderColor = isDark
-        ? const Color(0xFF334155)
-        : const Color(0xFFE2E8F0);
-    final bgColor = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final effectiveAccent =
+        valueColor ?? (isDark ? AppTheme.primaryBlueDark : AppTheme.primaryBlue);
 
     return Container(
-      padding: padding ?? const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      padding: padding ?? const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
       decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: borderColor, width: 1.0),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-            blurRadius: 4,
-            offset: const Offset(0, 1.5),
-          ),
-        ],
+        color: isDark ? AppTheme.darkSurface : AppTheme.lightSurface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(
+          color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
+          width: 1.0,
+        ),
+        boxShadow: AppTheme.softShadow(isDark),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: textColor,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 5),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                if (currencyPrefix != null) ...[
-                  Text(
-                    currencyPrefix,
-                    style: TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w700,
-                      color: valueColor != null
-                          ? valueColor.withValues(alpha: 0.8)
-                          : subColor,
-                    ),
-                  ),
-                  const SizedBox(width: 2.5),
-                ],
-                Text(
-                  mainValue,
-                  style: TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w900,
-                    fontFamily: 'monospace',
-                    letterSpacing: -0.3,
-                    color: valueColor ?? textColor,
-                  ),
+          Positioned(
+            top: 0,
+            bottom: 0,
+            left: -11,
+            child: Container(
+              width: 3.5,
+              decoration: BoxDecoration(
+                color: effectiveAccent,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(AppTheme.radiusMd),
+                  bottomLeft: Radius.circular(AppTheme.radiusMd),
                 ),
-              ],
+              ),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w500,
-              color: subColor,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? AppTheme.darkTextSecondary
+                      : AppTheme.lightTextSecondary,
+                  height: 1.25,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    if (currencyPrefix != null) ...[
+                      Text(
+                        currencyPrefix,
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: effectiveAccent,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                    ],
+                    Text(
+                      mainValue,
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w800,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        letterSpacing: -0.2,
+                        color: effectiveAccent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 2.5),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                  color: isDark
+                      ? AppTheme.darkTextTertiary
+                      : AppTheme.lightTextTertiary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
         ],
       ),
@@ -778,20 +794,20 @@ class _MainScreenState extends State<MainScreen> {
       // Card 1: Invoiced (Debit -> Amber / Yellow distinct from Balance Red)
       card1 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ኢንቮይስ' : 'Invoiced',
+        title: LanguageService.t('invoiced'),
         mainValue: _currencyFormat.format(totalDebit),
-        currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
-        subtitle: _isAmharic ? 'ዴቢት' : 'Debit',
+        currencyPrefix: LanguageService.t('currency'),
+        subtitle: LanguageService.t('debit'),
         valueColor: const Color(0xFFD97706),
       );
 
       // Card 2: Received (Income -> Green)
       card2 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'የተከፈለ' : 'Received',
+        title: LanguageService.t('received'),
         mainValue: _currencyFormat.format(totalCredit),
-        currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
-        subtitle: _isAmharic ? 'ክሬዲት' : 'Credit',
+        currencyPrefix: LanguageService.t('currency'),
+        subtitle: LanguageService.t('credit'),
         valueColor: const Color(0xFF16A34A),
       );
 
@@ -800,14 +816,14 @@ class _MainScreenState extends State<MainScreen> {
       final isOverpaid = netBalance < 0;
       card3 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ቀሪ' : 'Balance',
+        title: LanguageService.t('balance'),
         mainValue: _currencyFormat.format(netBalance.abs()),
-        currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
+        currencyPrefix: LanguageService.t('currency'),
         subtitle: isReceivable
-            ? (_isAmharic ? 'ተሰብሳቢ' : 'Receivable')
+            ? LanguageService.t('receivable')
             : (isOverpaid
-                  ? (_isAmharic ? 'ትርፍ' : 'Overpaid')
-                  : (_isAmharic ? 'ተወራርዷል' : 'Settled')),
+                  ? LanguageService.t('overpaid')
+                  : LanguageService.t('settled')),
         valueColor: isReceivable
             ? const Color(0xFFDC2626)
             : const Color(0xFF16A34A),
@@ -825,20 +841,20 @@ class _MainScreenState extends State<MainScreen> {
       // Card 1: Invoiced (Debit -> Amber / Yellow distinct from Balance Red)
       card1 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ኢንቮይስ' : 'Invoiced',
+        title: LanguageService.t('invoiced'),
         mainValue: _currencyFormat.format(totalDebit),
-        currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
-        subtitle: _isAmharic ? 'ዴቢት' : 'Debit',
+        currencyPrefix: LanguageService.t('currency'),
+        subtitle: LanguageService.t('debit'),
         valueColor: const Color(0xFFD97706),
       );
 
       // Card 2: Received (Income -> Green)
       card2 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'የተከፈለ' : 'Received',
+        title: LanguageService.t('received'),
         mainValue: _currencyFormat.format(totalCredit),
-        currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
-        subtitle: _isAmharic ? 'ክሬዲት' : 'Credit',
+        currencyPrefix: LanguageService.t('currency'),
+        subtitle: LanguageService.t('credit'),
         valueColor: const Color(0xFF16A34A),
       );
 
@@ -847,14 +863,14 @@ class _MainScreenState extends State<MainScreen> {
       final isAdvance = netBalance < 0;
       card3 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ቀሪ' : 'Balance',
+        title: LanguageService.t('balance'),
         mainValue: _currencyFormat.format(netBalance.abs()),
-        currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
+        currencyPrefix: LanguageService.t('currency'),
         subtitle: isPayable
-            ? (_isAmharic ? 'ተከፋይ' : 'Payable')
+            ? LanguageService.t('payable')
             : (isAdvance
-                  ? (_isAmharic ? 'ቅድመ' : 'Advance')
-                  : (_isAmharic ? 'ተወራርዷል' : 'Settled')),
+                  ? LanguageService.t('advance')
+                  : LanguageService.t('settled')),
         valueColor: isPayable
             ? const Color(0xFFDC2626)
             : const Color(0xFF16A34A),
@@ -886,20 +902,20 @@ class _MainScreenState extends State<MainScreen> {
       // Card 1: Invoiced (Borrowed goods / Debit -> Amber / Yellow #D97706)
       card1 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ኢንቮይስ' : 'Invoiced',
+        title: LanguageService.t('invoiced'),
         mainValue: _currencyFormat.format(totalBorrowedPrice),
-        currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
-        subtitle: _isAmharic ? 'ዴቢት' : 'Debit',
+        currencyPrefix: LanguageService.t('currency'),
+        subtitle: LanguageService.t('debit'),
         valueColor: const Color(0xFFD97706),
       );
 
       // Card 2: Received (Settled / Payments / Income -> Green)
       card2 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'የተከፈለ' : 'Received',
+        title: LanguageService.t('received'),
         mainValue: _currencyFormat.format(totalSettledPrice),
-        currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
-        subtitle: _isAmharic ? 'ክሬዲት' : 'Credit',
+        currencyPrefix: LanguageService.t('currency'),
+        subtitle: LanguageService.t('credit'),
         valueColor: const Color(0xFF16A34A),
       );
 
@@ -908,101 +924,75 @@ class _MainScreenState extends State<MainScreen> {
       final isPayable = netBalance < 0;
       card3 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ቀሪ' : 'Balance',
+        title: LanguageService.t('balance'),
         mainValue: _currencyFormat.format(netBalance.abs()),
-        currencyPrefix: _isAmharic ? 'ብር' : 'ETB',
+        currencyPrefix: LanguageService.t('currency'),
         subtitle: isReceivable
-            ? (_isAmharic ? 'ተሰብሳቢ' : 'Receivable')
+            ? LanguageService.t('receivable')
             : (isPayable
-                  ? (_isAmharic ? 'ተከፋይ' : 'Payable')
-                  : (_isAmharic ? 'ተወራርዷል' : 'Settled')),
+                  ? LanguageService.t('payable')
+                  : LanguageService.t('settled')),
         valueColor: isReceivable
             ? const Color(0xFFDC2626)
             : const Color(0xFF16A34A),
       );
     } else {
-      // Store / Stock
+      // Store / Stock: 3 summary cards matching Customer, Supplier & Delala
+      final storeProducts = _inventoryProducts.where((p) {
+        if (_selectedStoreId != null &&
+            _selectedStoreId != 'all' &&
+            p.storeId != null &&
+            p.storeId != _selectedStoreId) {
+          return false;
+        }
+        return true;
+      }).toList();
+
       double totalStoreValue = 0;
       double totalPieces = 0;
-      for (final prod in _inventoryProducts) {
+      double totalCartons = 0;
+      for (final prod in storeProducts) {
         final pcs = prod.currentQuantity;
         totalPieces += pcs;
-        totalStoreValue += (prod.totalValue > 0
-            ? prod.totalValue
-            : pcs * prod.costPrice);
+        final effPcs = prod.pcsPerCarton > 0 ? prod.pcsPerCarton : 1.0;
+        totalCartons += (pcs / effPcs).floorToDouble();
+        final price = prod.unitPrice > 0
+            ? prod.unitPrice
+            : (prod.storekeeperPrice > 0 ? prod.storekeeperPrice : prod.costPrice);
+        totalStoreValue += (prod.totalValue > 0 ? prod.totalValue : pcs * price);
       }
 
-      final canSeeValuation =
-          widget.currentUser.isAdmin || widget.currentUser.isSales;
-      final compactPad = canSeeValuation
-          ? const EdgeInsets.symmetric(horizontal: 6, vertical: 7)
-          : null;
+      final compactPad = const EdgeInsets.symmetric(horizontal: 6, vertical: 7);
 
-      // Card 1: Valuation
+      // Card 1: Valuation / ዋጋ
       card1 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ዋጋ' : 'Valuation',
-        mainValue: canSeeValuation
-            ? _currencyFormat.format(totalStoreValue)
-            : '•••',
-        currencyPrefix: canSeeValuation
-            ? (_isAmharic ? 'ብር' : 'ETB')
-            : null,
-        subtitle: canSeeValuation
-            ? (_isAmharic ? 'ጠቅላላ' : 'Total')
-            : (_isAmharic ? 'አድሚን' : 'Admin'),
-        valueColor:
-            canSeeValuation ? const Color(0xFFD97706) : null,
+        title: LanguageService.t('valuation'),
+        mainValue: _currencyFormat.format(totalStoreValue),
+        currencyPrefix: LanguageService.t('currency'),
+        subtitle: '${totalCartons.toInt()} ${_isAmharic ? 'ካርቶን' : 'ctn'}',
+        valueColor: const Color(0xFFD97706),
         padding: compactPad,
       );
 
-      // Card 2: Products
+      // Card 2: Products / ዕቃዎች
       card2 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ምርቶች' : 'Products',
-        mainValue:
-            '${_inventoryProducts.length} ${_isAmharic ? "ዓይነት" : "Items"}',
-        subtitle: _isAmharic ? 'ካታሎግ' : 'Catalog',
+        title: LanguageService.t('products'),
+        mainValue: '${storeProducts.length} ${_isAmharic ? 'ዕቃዎች' : 'items'}',
+        subtitle: LanguageService.t('catalog'),
         valueColor: const Color(0xFF2563EB),
         padding: compactPad,
       );
 
-      // Card 3: Stock
+      // Card 3: Stock / ክምችት
       card3 = _buildTopGridCard(
         isDark: isDark,
-        title: _isAmharic ? 'ክምችት' : 'Stock',
-        mainValue: '${totalPieces.toInt()} ${_isAmharic ? "ፍሬ" : "pcs"}',
-        subtitle: _isAmharic ? 'ያለ' : 'Available',
+        title: LanguageService.t('stock'),
+        mainValue: '${totalPieces.toInt()} ${_isAmharic ? 'ፍሬ' : 'pcs'}',
+        subtitle: LanguageService.t('availableShort'),
         valueColor: const Color(0xFF16A34A),
         padding: compactPad,
-      );
-
-      if (canSeeValuation) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
-          child: Row(
-            children: [
-              Expanded(child: card1),
-              const SizedBox(width: 8),
-              Expanded(child: card2),
-              const SizedBox(width: 8),
-              Expanded(child: card3),
-            ],
-          ),
-        );
-      }
-    }
-
-    if (_currentTabType == 'stock' && widget.currentUser.isStorekeeper) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
-        child: Row(
-          children: [
-            Expanded(child: card2),
-            const SizedBox(width: 8),
-            Expanded(child: card3),
-          ],
-        ),
       );
     }
 
@@ -1050,9 +1040,7 @@ class _MainScreenState extends State<MainScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _isAmharic
-                ? '"${result.productName}" በተሳካ ሁኔታ ተመዝግቧል'
-                : 'Product "${result.productName}" registered successfully',
+            LanguageService.t('savedSuccessfully').replaceAll('{title}', result.productName),
           ),
           backgroundColor: const Color(0xFF16A34A),
         ),
@@ -1068,6 +1056,7 @@ class _MainScreenState extends State<MainScreen> {
       context: context,
       builder: (ctx) => StockTransactionDialog(
         currentUser: widget.currentUser,
+        availableStores: _accessibleStores,
         activeStoreId: _selectedStoreId,
         availableProducts: _inventoryProducts,
         preselectedProduct: preselected,
@@ -1094,9 +1083,36 @@ class _MainScreenState extends State<MainScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
+            LanguageService.t('savedSuccessfully'),
+          ),
+          backgroundColor: const Color(0xFF16A34A),
+        ),
+      );
+    }
+  }
+
+  Future<void> _openStockTransferDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StockTransferDialog(
+        currentUser: widget.currentUser,
+        availableStores: _accessibleStores,
+        initialFromStoreId: (_selectedStoreId != null && _selectedStoreId != 'all')
+            ? _selectedStoreId
+            : null,
+        availableProducts: _inventoryProducts,
+        isAmharic: _isAmharic,
+      ),
+    );
+
+    if (result == true && mounted) {
+      await _reloadRecordsOnly();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
             _isAmharic
-                ? 'የክምችት ዝውውር በተሳካ ሁኔታ ተመዝግቧል'
-                : 'Stock movement recorded successfully',
+                ? 'የዕቃ ዝውውር በተሳካ ሁኔታ ተጠናቋል!'
+                : 'Stock transferred successfully!',
           ),
           backgroundColor: const Color(0xFF16A34A),
         ),
@@ -1128,7 +1144,7 @@ class _MainScreenState extends State<MainScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _isAmharic ? 'የዕቃ መረጃ ተስተካክሏል' : 'Product updated successfully',
+            LanguageService.t('updateSuccessGeneric'),
           ),
           backgroundColor: const Color(0xFF16A34A),
         ),
@@ -1185,7 +1201,7 @@ class _MainScreenState extends State<MainScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        _isAmharic ? 'ቅንብሮች' : 'Settings',
+                        LanguageService.t('settings'),
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -1221,7 +1237,7 @@ class _MainScreenState extends State<MainScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _isAmharic ? 'ቋንቋ' : 'Language',
+                          LanguageService.t('language'),
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
@@ -1253,7 +1269,7 @@ class _MainScreenState extends State<MainScreen> {
                                   ),
                                   alignment: Alignment.center,
                                   child: Text(
-                                    'English',
+                                    LanguageService.t('english'),
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
@@ -1290,7 +1306,7 @@ class _MainScreenState extends State<MainScreen> {
                                   ),
                                   alignment: Alignment.center,
                                   child: Text(
-                                    'አማርኛ',
+                                    LanguageService.t('amharic'),
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
@@ -1332,9 +1348,7 @@ class _MainScreenState extends State<MainScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              _isAmharic
-                                  ? 'የንግድ ስም እና ሎጎ (Branding)'
-                                  : 'Business Branding & Logo',
+                              LanguageService.t('businessBrandingLogo'),
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
@@ -1348,9 +1362,7 @@ class _MainScreenState extends State<MainScreen> {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
-                                    _isAmharic
-                                        ? 'የመረጡት ሎጎ በራስጌ እና በፒዲኤፍ ሪፖርቶች ላይ ይታያል'
-                                        : 'Your logo appears in app headers and PDF statements',
+                                    LanguageService.t('logoAppears'),
                                     style: TextStyle(
                                       fontSize: 10.5,
                                       color: isDark
@@ -1375,9 +1387,7 @@ class _MainScreenState extends State<MainScreen> {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(
                                             content: Text(
-                                              _isAmharic
-                                                  ? 'የሎጎ ምስል በተሳካ ሁኔታ ተጭኗል!'
-                                                  : 'Logo image uploaded successfully!',
+                                              LanguageService.t('logoUploaded'),
                                             ),
                                             backgroundColor: const Color(
                                               0xFF16A34A,
@@ -1389,7 +1399,9 @@ class _MainScreenState extends State<MainScreen> {
                                       if (mounted) {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(
-                                            content: Text('Logo upload error: $e'),
+                                            content: Text(
+                                              LanguageService.t('logoUploadError').replaceAll('{error}', e.toString()),
+                                            ),
                                             backgroundColor: Colors.red,
                                           ),
                                         );
@@ -1401,7 +1413,7 @@ class _MainScreenState extends State<MainScreen> {
                                     size: 16,
                                   ),
                                   label: Text(
-                                    _isAmharic ? 'የሎጎ ምስል ጫን' : 'Upload Logo',
+                                    LanguageService.t('uploadLogo'),
                                     style: const TextStyle(
                                       fontSize: 11.5,
                                       fontWeight: FontWeight.w600,
@@ -1433,7 +1445,7 @@ class _MainScreenState extends State<MainScreen> {
                                       size: 15,
                                     ),
                                     label: Text(
-                                      _isAmharic ? 'ነባሪ ሎጎ' : 'Reset Logo',
+                                      LanguageService.t('resetLogo'),
                                       style: const TextStyle(fontSize: 11),
                                     ),
                                     style: OutlinedButton.styleFrom(
@@ -1462,9 +1474,7 @@ class _MainScreenState extends State<MainScreen> {
                                 color: isDark ? Colors.white : const Color(0xFF0F172A),
                               ),
                               decoration: InputDecoration(
-                                labelText: _isAmharic
-                                    ? 'የመተግበሪያ / የንግድ ስም'
-                                    : 'App / Business Title',
+                                labelText: LanguageService.t('appBusinessTitle'),
                                 hintText: AppSettingsService.defaultTitle,
                                 labelStyle: TextStyle(
                                   color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
@@ -1504,7 +1514,7 @@ class _MainScreenState extends State<MainScreen> {
                                       ),
                                     IconButton(
                                       icon: const Icon(Icons.check_circle, size: 20, color: Color(0xFF16A34A)),
-                                      tooltip: _isAmharic ? 'አስቀምጥ' : 'Save Title',
+                                      tooltip: LanguageService.t('save'),
                                       onPressed: () async {
                                         await AppSettingsService.setAppTitle(
                                           titleController.text,
@@ -1515,9 +1525,7 @@ class _MainScreenState extends State<MainScreen> {
                                           ScaffoldMessenger.of(context).showSnackBar(
                                             SnackBar(
                                               content: Text(
-                                                _isAmharic
-                                                    ? 'የንግድ ስም በተሳካ ሁኔታ ተቀምጧል!'
-                                                    : 'Business title saved successfully!',
+                                                LanguageService.t('businessTitleSaved'),
                                               ),
                                               backgroundColor: const Color(0xFF16A34A),
                                               duration: const Duration(seconds: 2),
@@ -1538,9 +1546,7 @@ class _MainScreenState extends State<MainScreen> {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(
-                                        _isAmharic
-                                            ? 'የንግድ ስም በተሳካ ሁኔታ ተቀምጧል!'
-                                            : 'Business title saved successfully!',
+                                        LanguageService.t('businessTitleSaved'),
                                       ),
                                       backgroundColor: const Color(0xFF16A34A),
                                       duration: const Duration(seconds: 2),
@@ -1575,7 +1581,7 @@ class _MainScreenState extends State<MainScreen> {
                                     },
                                     icon: const Icon(Icons.check, size: 15),
                                     label: Text(
-                                      _isAmharic ? 'ስም አስቀምጥ' : 'Save Title',
+                                      LanguageService.t('save'),
                                       style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
                                     ),
                                     style: ElevatedButton.styleFrom(
@@ -1605,7 +1611,7 @@ class _MainScreenState extends State<MainScreen> {
                                     ),
                                   ),
                                   child: Text(
-                                    _isAmharic ? 'ነባሪ ስም' : 'Reset Title',
+                                    LanguageService.t('resetTitle'),
                                     style: const TextStyle(fontSize: 11),
                                   ),
                                 ),
@@ -1644,9 +1650,7 @@ class _MainScreenState extends State<MainScreen> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                _isAmharic
-                                    ? 'የተጠቃሚዎች እና መደብሮች አስተዳደር'
-                                    : 'Sales, Storekeepers & Stores',
+                                LanguageService.t('salesStorekeepersStores'),
                                 style: TextStyle(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.bold,
@@ -1657,9 +1661,7 @@ class _MainScreenState extends State<MainScreen> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            _isAmharic
-                                ? 'የሽያጭ ሠራተኞችን (Sales)፣ የመጋዘን ኃላፊዎችን እና መደብሮችን በሙሉ በአንድ ቦታ ያስተዳድሩ፦'
-                                : 'Manage and add sales accounts, storekeepers, and stores in one place:',
+                            LanguageService.t('manageSalesStorekeepers'),
                             style: TextStyle(
                               fontSize: 11,
                               color: isDark
@@ -1683,7 +1685,7 @@ class _MainScreenState extends State<MainScreen> {
                               },
                               icon: const Icon(Icons.manage_accounts_rounded, size: 17),
                               label: Text(
-                                _isAmharic ? 'ሁሉንም አስተዳድር (Manage All)' : 'Manage All (Users & Stores)',
+                                LanguageService.t('manageAll'),
                                 style: const TextStyle(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.bold,
@@ -1707,6 +1709,25 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                     ),
                   ],
+                  if (widget.currentUser.isAdmin) ...[
+                    const SizedBox(height: 16),
+                    // Custom Translation Editor (Admin Only)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF242C40)
+                            : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF2E384D)
+                              : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: _buildTranslationEditor(ctx, isDark),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1715,6 +1736,407 @@ class _MainScreenState extends State<MainScreen> {
       },
     );
   }
+
+  /// Admin Custom Translation Editor — allows authorized admins to view,
+  /// edit, and persist custom translation overrides locally.
+  Widget _buildTranslationEditor(BuildContext ctx, bool isDark) {
+    final _searchCtrl = TextEditingController();
+    final _editKeyCtrl = TextEditingController();
+    final _editEnCtrl = TextEditingController();
+    final _editAmCtrl = TextEditingController();
+    String _filter = '';
+    String? _editingKey;
+    bool _isSaving = false;
+    bool _isExporting = false;
+    String? _exportJson;
+    bool _isImporting = false;
+
+    List<String> _filteredKeys() {
+      final all = LanguageService.getAllKeys().toList()..sort();
+      if (_filter.trim().isEmpty) return all;
+      final q = _filter.trim().toLowerCase();
+      return all.where((k) => k.toLowerCase().contains(q)).toList();
+    }
+
+    Future<void> _saveCustom(String key, String en, String am) async {
+      if (key.trim().isEmpty) return;
+      setState(() => _isSaving = true);
+      await LanguageService.setCustomTranslation('en', key.trim(), en.trim());
+      await LanguageService.setCustomTranslation('am', key.trim(), am.trim());
+      _editKeyCtrl.clear();
+      _editEnCtrl.clear();
+      _editAmCtrl.clear();
+      _editingKey = null;
+      if (mounted) setState(() => _isSaving = false);
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(LanguageService.t('updateSuccessGeneric')),
+            backgroundColor: const Color(0xFF16A34A),
+          ),
+        );
+      }
+    }
+
+    Future<void> _resetKey(String key) async {
+      await LanguageService.resetCustomTranslation('en', key);
+      await LanguageService.resetCustomTranslation('am', key);
+      if (mounted) setState(() {});
+    }
+
+    Future<void> _resetAll() async {
+      final confirmed = await showDialog<bool>(
+        context: ctx,
+        builder: (dCtx) => AlertDialog(
+          title: Text(LanguageService.t('confirmDeleteGeneric')),
+          content: const Text('Reset all custom translations to defaults?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dCtx, false),
+              child: Text(LanguageService.t('cancel')),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dCtx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFBA1A1A),
+                foregroundColor: Colors.white,
+              ),
+              child: Text(LanguageService.t('delete')),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true) {
+        await LanguageService.resetAllCustomTranslations();
+        if (mounted) setState(() {});
+      }
+    }
+
+    Future<void> _export() async {
+      setState(() => _isExporting = true);
+      final json = LanguageService.exportCustomTranslations();
+      setState(() {
+        _exportJson = json;
+        _isExporting = false;
+      });
+    }
+
+    Future<void> _import() async {
+      final controller = TextEditingController(text: _exportJson ?? '');
+      final result = await showDialog<bool>(
+        context: ctx,
+        builder: (dCtx) => AlertDialog(
+          title: Text(LanguageService.t('import')),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: TextField(
+              controller: controller,
+              maxLines: 8,
+              decoration: InputDecoration(
+                labelText: LanguageService.t('pasteJson'),
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dCtx, false),
+              child: Text(LanguageService.t('cancel')),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dCtx, true),
+              child: Text(LanguageService.t('save')),
+            ),
+          ],
+        ),
+      );
+      if (result == true && controller.text.trim().isNotEmpty) {
+        setState(() => _isImporting = true);
+        final ok = await LanguageService.importCustomTranslations(
+          controller.text.trim(),
+        );
+        setState(() => _isImporting = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                ok
+                    ? LanguageService.t('importSuccessGeneric')
+                    : LanguageService.t('invalidImportGeneric'),
+              ),
+              backgroundColor: ok ? const Color(0xFF16A34A) : Colors.red,
+            ),
+          );
+          setState(() {});
+        }
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              LanguageService.t('translationEditor'),
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : const Color(0xFF0F172A),
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_exportJson != null)
+                  IconButton(
+                    icon: const Icon(Icons.file_download, size: 18),
+                    tooltip: LanguageService.t('export'),
+                    onPressed: _isExporting ? null : _export,
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.file_upload, size: 18),
+                  tooltip: LanguageService.t('import'),
+                  onPressed: _isImporting ? null : _import,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 18),
+                  tooltip: LanguageService.t('resetToDefault'),
+                  onPressed: _resetAll,
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _searchCtrl,
+          decoration: InputDecoration(
+            labelText: LanguageService.t('searchKeys'),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+            ),
+          ),
+          onChanged: (val) => setState(() => _filter = val),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 260,
+          child: _filteredKeys().isEmpty
+              ? Center(
+                  child: Text(
+                    LanguageService.t('noKeysFound'),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: _filteredKeys().length,
+                  itemBuilder: (ctx, index) {
+                    final key = _filteredKeys()[index];
+                    return ListTile(
+                      dense: true,
+                      title: Text(
+                        key,
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  '${LanguageService.t('enLabel')}: ${_enValue(key)}',
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFF2563EB)),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '${LanguageService.t('amLabel')}: ${_amValue(key)}',
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFF16A34A)),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_editingKey == key) ...[
+                            const SizedBox(height: 6),
+                            TextField(
+                              controller: _editEnCtrl,
+                              decoration: InputDecoration(
+                                labelText: LanguageService.t('english'),
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            TextField(
+                              controller: _editAmCtrl,
+                              decoration: InputDecoration(
+                                labelText: LanguageService.t('amharic'),
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                TextButton(
+                                  onPressed: () {
+                                    _editKeyCtrl.clear();
+                                    _editEnCtrl.clear();
+                                    _editAmCtrl.clear();
+                                    setState(() => _editingKey = null);
+                                  },
+                                  child: Text(LanguageService.t('cancel')),
+                                ),
+                                const SizedBox(width: 8),
+                                ElevatedButton(
+                                  onPressed: _isSaving ? null : () => _saveCustom(
+                                    key,
+                                    _editEnCtrl.text,
+                                    _editAmCtrl.text,
+                                  ),
+                                  child: Text(LanguageService.t('save')),
+                                ),
+                              ],
+                            ),
+                          ] else ...[
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                TextButton.icon(
+                                  icon: const Icon(Icons.edit, size: 14),
+                                  label: Text(LanguageService.t('edit')),
+                                  onPressed: () {
+                                    _editingKey = key;
+                                    _editKeyCtrl.text = key;
+                                    final tr = LanguageService.getTranslationsForKey(key);
+                                    _editEnCtrl.text = tr['en'] ?? key;
+                                    _editAmCtrl.text = tr['am'] ?? key;
+                                    setState(() {});
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.refresh, size: 16),
+                                  tooltip: LanguageService.t('resetToDefault'),
+                                  onPressed: () => _resetKey(key),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                      trailing: _editingKey == key
+                          ? const SizedBox.shrink()
+                          : IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFBA1A1A)),
+                              tooltip: LanguageService.t('removeOverride'),
+                              onPressed: () => _resetKey(key),
+                            ),
+                    );
+                  },
+                ),
+        ),
+        const SizedBox(height: 10),
+        if (_editingKey != null) ...[
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  LanguageService.t('editKey').replaceAll('{key}', _editingKey!),
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _editEnCtrl,
+                  decoration: InputDecoration(labelText: LanguageService.t('english'), isDense: true),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _editAmCtrl,
+                  decoration: InputDecoration(labelText: LanguageService.t('amharic'), isDense: true),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _isSaving ? null : () => _saveCustom(
+                          _editingKey!,
+                          _editEnCtrl.text,
+                          _editAmCtrl.text,
+                        ),
+                        child: Text(_isSaving ? LanguageService.t('saving') : LanguageService.t('save')),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () {
+                        _editKeyCtrl.clear();
+                        _editEnCtrl.clear();
+                        _editAmCtrl.clear();
+                        setState(() => _editingKey = null);
+                      },
+                      child: Text(LanguageService.t('cancel')),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        Text(
+          'Custom overrides are stored locally on this device only. '
+          'They do not synchronize to other devices or to a server.',
+          style: TextStyle(
+            fontSize: 9,
+            fontStyle: FontStyle.italic,
+            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _enValue(String key) {
+    final t = LanguageService.getTranslationsForKey(key);
+    return t['en'] ?? key;
+  }
+
+  String _amValue(String key) {
+    final t = LanguageService.getTranslationsForKey(key);
+    return t['am'] ?? key;
+  }
+
 
   /// Advanced Mobile Store Inventory View (Real Inventory System)
   Widget _buildStockInventorySheet(ThemeData theme, bool isDark) {
@@ -1810,173 +2232,130 @@ class _MainScreenState extends State<MainScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Store Switcher Dropdown Component (inside Stock tab)
-          if (_stores.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-              child: Tooltip(
-                message: _activeStoreLabel,
-                child: Container(
-                  height: 38,
+          // 1. STORE LOCATION DROPDOWN SELECTOR CARD
+          Container(
+            margin: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _isAmharic ? 'የሚተዳደረው መደብር:' : 'Active Store Location:',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      ),
+                    ),
+                    if (_selectedStoreId != 'all')
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF16A34A).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          _activeStoreLabel,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF16A34A),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  height: 42,
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: isDark
-                          ? const Color(0xFF334155)
-                          : const Color(0xFFCBD5E1),
-                      width: 1,
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
                     ),
                   ),
                   child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: (_selectedStoreId == 'all' ||
-                            _stores.any((s) => s.id == _selectedStoreId))
-                        ? _selectedStoreId
-                        : (_stores.isNotEmpty ? _stores.first.id : 'all'),
-                    isDense: true,
-                    isExpanded: true,
-                    dropdownColor:
-                        isDark ? const Color(0xFF1E293B) : Colors.white,
-                    icon: Icon(
-                      Icons.arrow_drop_down,
-                      size: 22,
-                      color: isDark
-                          ? const Color(0xFFCBD5E1)
-                          : const Color(0xFF475569),
-                    ),
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: isDark ? Colors.white : const Color(0xFF0F172A),
-                    ),
-                    items: [
-                      DropdownMenuItem(
-                        value: 'all',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.storefront_outlined,
-                                size: 16, color: Color(0xFF2563EB)),
-                            const SizedBox(width: 8),
-                            Text(
-                              _isAmharic ? 'ሁሉም መደብሮች' : 'All Stores',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
+                    child: DropdownButton<String>(
+                      value: (_selectedStoreId == 'all' ||
+                              _stores.any((s) => s.id == _selectedStoreId))
+                          ? _selectedStoreId
+                          : (_stores.isNotEmpty ? _stores.first.id : 'all'),
+                      isDense: true,
+                      isExpanded: true,
+                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      icon: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
                       ),
-                      ..._accessibleStores.map((s) => DropdownMenuItem(
-                            value: s.id,
-                            child: Row(
-                              children: [
-                                const Icon(Icons.store_rounded,
-                                    size: 16, color: Color(0xFF16A34A)),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    s.name,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        _onStoreChanged(val);
-                      }
-                    },
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // 1. Available Store Items Header Bar (Storekeeper gets "+ Add Item"; Admin is View Mode Only)
-          Container(
-            margin: const EdgeInsets.fromLTRB(14, 4, 14, 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF242C40) : const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(7),
-              border: Border.all(color: gridBorderColor, width: 1.0),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _isAmharic ? 'በመደብር ውስጥ ያሉ ዕቃዎች' : 'Available Store Items',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 12.5,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _isAmharic
-                          ? '${filteredProducts.length} ዕቃዎች'
-                          : '${filteredProducts.length} Products',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                    // Create (+ Add Item) for Storekeeper & Sales
-                    if (widget.currentUser.isStorekeeper ||
-                        widget.currentUser.isSales) ...[
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: _openNewProductDialog,
-                        borderRadius: BorderRadius.circular(6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2563EB),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
+                      items: [
+                        DropdownMenuItem(
+                          value: 'all',
                           child: Row(
-                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(
-                                Icons.add,
-                                size: 14,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 2),
-                              Text(
-                                _isAmharic ? 'አዲስ ምርት' : 'Add Item',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
+                              const Icon(Icons.apps_rounded, size: 16, color: Color(0xFF2563EB)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _isAmharic
+                                      ? 'ሁሉም የተመደቡ መደብሮች (ጠቅላላ ማጠቃለያ)'
+                                      : 'All Assigned Stores (Summary)',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ),
-                    ],
-                  ],
+                        ..._accessibleStores.map((s) {
+                          final hasCode = s.code.isNotEmpty;
+                          return DropdownMenuItem(
+                            value: s.id,
+                            child: Row(
+                              children: [
+                                const Icon(Icons.storefront_rounded, size: 16, color: Color(0xFF16A34A)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    hasCode ? '${s.name} (${s.code})' : s.name,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) _onStoreChanged(val);
+                      },
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 6),
 
-          // 3. Products List or Empty State
+          // 2. PRODUCTS TABLE LIST OR EMPTY STATE
           if (filteredProducts.isEmpty)
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
@@ -1997,39 +2376,24 @@ class _MainScreenState extends State<MainScreen> {
                   const SizedBox(height: 12),
                   Text(
                     query.isNotEmpty
-                        ? (_isAmharic
-                              ? 'የሚዛመድ ዕቃ አልተገኘም'
-                              : 'No matching products found')
-                        : (_selectedStoreId != 'all'
-                              ? (_isAmharic
-                                    ? 'በዚህ መደብር ውስጥ ምንም ዳታ የለም (ዳታ ባዶ ነው)'
-                                    : 'No data in this store (Data empty)')
-                              : (_isAmharic
-                                    ? 'በመደብር ውስጥ የተመዘገበ ዕቃ የለም'
-                                    : 'No registered products yet')),
+                        ? LanguageService.t('noMatchingProducts')
+                        : (_selectedStoreId != 'all')
+                            ? LanguageService.t('noDataInStore')
+                            : LanguageService.t('noRegisteredProducts'),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 13.5,
-                      color: isDark
-                          ? const Color(0xFF94A3B8)
-                          : const Color(0xFF64748B),
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                     ),
                   ),
-                  // Register product in empty state is for Storekeeper and Sales
-                  if (widget.currentUser.isStorekeeper ||
-                      widget.currentUser.isSales) ...[
+                  if (widget.currentUser.isStorekeeper || widget.currentUser.isSales) ...[
                     const SizedBox(height: 10),
                     TextButton.icon(
                       onPressed: _openNewProductDialog,
                       icon: const Icon(Icons.add_box_outlined, size: 16),
                       label: Text(
-                        _isAmharic
-                            ? '+ አዲስ ምርት መዝግብ'
-                            : '+ Register New Product',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
+                        LanguageService.t('registerNewProduct'),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                       ),
                     ),
                   ],
@@ -2046,6 +2410,8 @@ class _MainScreenState extends State<MainScreen> {
       ),
     );
   }
+
+
 
   /// Product Table card identical to Customer & Supplier table style
   Widget _buildProductTable(
@@ -2231,7 +2597,7 @@ class _MainScreenState extends State<MainScreen> {
                           Expanded(
                             flex: 7,
                             child: Text(
-                              _isAmharic ? 'በካርቶን' : 'Pcs/Ctn',
+                              LanguageService.t('pcsPerCtn'),
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 10.5,
@@ -2250,7 +2616,7 @@ class _MainScreenState extends State<MainScreen> {
                           Expanded(
                             flex: 8,
                             child: Text(
-                              _isAmharic ? 'ጠቅላላ' : 'Total',
+                              LanguageService.t('totalShort'),
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 10.5,
@@ -2273,7 +2639,7 @@ class _MainScreenState extends State<MainScreen> {
                                 horizontal: 4,
                               ),
                               child: Text(
-                                _isAmharic ? 'የአንዱ ዋጋ' : 'Unit Price',
+                                LanguageService.t('unitPrice'),
                                 textAlign: TextAlign.right,
                                 style: TextStyle(
                                   fontSize: 10.5,
@@ -2297,7 +2663,7 @@ class _MainScreenState extends State<MainScreen> {
                                 horizontal: 4,
                               ),
                               child: Text(
-                                _isAmharic ? 'ድምር ዋጋ' : 'Total Value',
+                                LanguageService.t('totalValue'),
                                 textAlign: TextAlign.right,
                                 style: TextStyle(
                                   fontSize: 10.5,
@@ -2459,9 +2825,7 @@ class _MainScreenState extends State<MainScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            _isAmharic
-                                ? 'ጠቅላላ ድምር ዋጋ'
-                                : 'Total Inventory Value',
+                            LanguageService.t('totalInventoryValue'),
                             style: const TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w900,
@@ -2606,6 +2970,36 @@ class _MainScreenState extends State<MainScreen> {
                         ),
                       ),
                     ),
+                    if (_accessibleStores.length > 1) ...[
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _openStockTransferDialog,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF2563EB),
+                            side: BorderSide(
+                              color: const Color(0xFF2563EB).withValues(alpha: 0.5),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 6,
+                              horizontal: 4,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                          icon: const Icon(Icons.swap_calls_rounded, size: 14),
+                          label: Text(
+                            _isAmharic ? 'ዝውውር' : 'Transfer',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2625,18 +3019,15 @@ class _MainScreenState extends State<MainScreen> {
         : const Color(0xFFCBD5E1);
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B2234) : Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: gridBorderColor, width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        color: isDark ? AppTheme.darkSurface : AppTheme.lightSurface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(
+          color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
+          width: 1.0,
+        ),
+        boxShadow: AppTheme.cardShadow(isDark),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2644,15 +3035,19 @@ class _MainScreenState extends State<MainScreen> {
           // Card Header (mobile friendly): chevron + type badge + name + date | Net Balance + actions
           InkWell(
             onTap: () => _toggleRecordExpanded(rec.id),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
+            borderRadius: BorderRadius.vertical(
+              top: const Radius.circular(AppTheme.radiusMd - 1),
+              bottom: isExpanded ? Radius.zero : const Radius.circular(AppTheme.radiusMd - 1),
+            ),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: isDark
-                    ? const Color(0xFF242C40)
+                    ? AppTheme.darkSurfaceAlt
                     : const Color(0xFFF8FAFC),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(7),
+                borderRadius: BorderRadius.vertical(
+                  top: const Radius.circular(AppTheme.radiusMd - 1),
+                  bottom: isExpanded ? Radius.zero : const Radius.circular(AppTheme.radiusMd - 1),
                 ),
               ),
               child: Row(
@@ -2861,19 +3256,19 @@ class _MainScreenState extends State<MainScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     // Table Header Row matching Image 5
-                    // # | የዕቃው አይነት | ዋጋ | ብዛት | ድምር
+                    // # | የዕቃው አይነት / Item | ዋጋ / Price | ብዛት / Qty | ድምር / Total
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        vertical: 8,
-                        horizontal: 4,
+                        vertical: 9,
+                        horizontal: 6,
                       ),
                       decoration: BoxDecoration(
                         color: isDark
-                            ? const Color(0xFF1E293B)
-                            : const Color(0xFFF1F5F9),
+                            ? AppTheme.darkSurfaceAlt
+                            : AppTheme.lightSurfaceAlt,
                         border: Border(
                           bottom: BorderSide(
-                            color: gridBorderColor,
+                            color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
                             width: 1.0,
                           ),
                         ),
@@ -2889,15 +3284,15 @@ class _MainScreenState extends State<MainScreen> {
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
                                 color: isDark
-                                    ? const Color(0xFFCBD5E1)
-                                    : const Color(0xFF334155),
+                                    ? AppTheme.darkTextSecondary
+                                    : AppTheme.lightTextSecondary,
                               ),
                             ),
                           ),
                           Container(
                             width: 1,
                             height: 16,
-                            color: gridBorderColor,
+                            color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
                           ),
                           Expanded(
                             flex: 12,
@@ -2906,13 +3301,13 @@ class _MainScreenState extends State<MainScreen> {
                                 horizontal: 6,
                               ),
                               child: Text(
-                                'የዕቃው አይነት',
+                                _isAmharic ? 'የዕቃው አይነት' : 'Item Description',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                   color: isDark
-                                      ? const Color(0xFFCBD5E1)
-                                      : const Color(0xFF334155),
+                                      ? AppTheme.darkTextSecondary
+                                      : AppTheme.lightTextSecondary,
                                 ),
                               ),
                             ),
@@ -2920,7 +3315,7 @@ class _MainScreenState extends State<MainScreen> {
                           Container(
                             width: 1,
                             height: 16,
-                            color: gridBorderColor,
+                            color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
                           ),
                           Expanded(
                             flex: 7,
@@ -2929,14 +3324,14 @@ class _MainScreenState extends State<MainScreen> {
                                 horizontal: 4,
                               ),
                               child: Text(
-                                'ዋጋ',
+                                _isAmharic ? 'ዋጋ' : 'Price',
                                 textAlign: TextAlign.right,
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                   color: isDark
-                                      ? const Color(0xFFCBD5E1)
-                                      : const Color(0xFF334155),
+                                      ? AppTheme.darkTextSecondary
+                                      : AppTheme.lightTextSecondary,
                                 ),
                               ),
                             ),
@@ -2944,7 +3339,7 @@ class _MainScreenState extends State<MainScreen> {
                           Container(
                             width: 1,
                             height: 16,
-                            color: gridBorderColor,
+                            color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
                           ),
                           Expanded(
                             flex: 5,
@@ -2953,14 +3348,14 @@ class _MainScreenState extends State<MainScreen> {
                                 horizontal: 4,
                               ),
                               child: Text(
-                                'ብዛት',
+                                _isAmharic ? 'ብዛት' : 'Qty',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                   color: isDark
-                                      ? const Color(0xFFCBD5E1)
-                                      : const Color(0xFF334155),
+                                      ? AppTheme.darkTextSecondary
+                                      : AppTheme.lightTextSecondary,
                                 ),
                               ),
                             ),
@@ -2968,7 +3363,7 @@ class _MainScreenState extends State<MainScreen> {
                           Container(
                             width: 1,
                             height: 16,
-                            color: gridBorderColor,
+                            color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
                           ),
                           Expanded(
                             flex: 8,
@@ -2977,14 +3372,14 @@ class _MainScreenState extends State<MainScreen> {
                                 horizontal: 6,
                               ),
                               child: Text(
-                                'ድምር',
+                                _isAmharic ? 'ድምር' : 'Total',
                                 textAlign: TextAlign.right,
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                   color: isDark
-                                      ? const Color(0xFFCBD5E1)
-                                      : const Color(0xFF334155),
+                                      ? AppTheme.darkTextSecondary
+                                      : AppTheme.lightTextSecondary,
                                 ),
                               ),
                             ),
@@ -3031,21 +3426,29 @@ class _MainScreenState extends State<MainScreen> {
                                             ? '${item.quantity.toInt()} $unit'
                                             : null)));
 
-                      final displayName =
-                          (rec.type == 'delala' &&
-                              isPayment &&
-                              (item.name.toLowerCase().contains('payment') ||
-                                  item.name.isEmpty))
-                          ? (_isAmharic ? 'ደላላ የከፈለው ብር' : 'Delala Cash Payment')
-                          : (rec.type == 'delala' &&
-                                item.sign == '+' &&
-                                bank != null &&
-                                bank.isNotEmpty &&
+                      final isOther = item.customType == 'Other Transactions' ||
+                          item.customType == 'Other' ||
+                          item.name == 'Other Transactions' ||
+                          item.name == 'ሌሎች ግብይቶች' ||
+                          item.name == 'delalaReturnedPaid' ||
+                          item.name == 'purchaseBoughtGoods';
+
+                      final displayName = isOther
+                          ? (_isAmharic ? 'ሌሎች ግብይቶች' : 'Other Transactions')
+                          : ((rec.type == 'delala' &&
+                                isPayment &&
                                 (item.name.toLowerCase().contains('payment') ||
-                                    item.name.toLowerCase().contains('cash') ||
                                     item.name.isEmpty))
-                          ? (_isAmharic ? 'ደላላ የወሰደው ብር' : 'Delala Cash Taken')
-                          : item.name;
+                            ? (_isAmharic ? 'ደላላ የከፈለው ብር' : 'Delala Cash Payment')
+                            : (rec.type == 'delala' &&
+                                  item.sign == '+' &&
+                                  bank != null &&
+                                  bank.isNotEmpty &&
+                                  (item.name.toLowerCase().contains('payment') ||
+                                      item.name.toLowerCase().contains('cash') ||
+                                      item.name.isEmpty))
+                            ? (_isAmharic ? 'ደላላ የወሰደው ብር' : 'Delala Cash Taken')
+                            : item.name);
 
                       return Container(
                         padding: const EdgeInsets.symmetric(
@@ -3122,6 +3525,13 @@ class _MainScreenState extends State<MainScreen> {
                                     Builder(
                                       builder: (context) {
                                         final subDetails = <String>[];
+                                        if (isOther) {
+                                          subDetails.add(
+                                            item.sign == '+'
+                                                ? (_isAmharic ? 'ገቢ (+)' : 'Income (+)')
+                                                : (_isAmharic ? 'ወጪ (-)' : 'Expense (-)'),
+                                          );
+                                        }
                                         if (rec.type == 'delala' &&
                                             bank != null &&
                                             bank.isNotEmpty) {
@@ -3538,11 +3948,20 @@ class _MainScreenState extends State<MainScreen> {
           ],
         ),
         actions: [
+          // Language toggle pill
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: AppLanguagePill(
+              onToggle: () => setState(() {}),
+            ),
+          ),
+          const SizedBox(width: 4),
+
           // Settings icon
           IconButton(
             icon: Icon(
               Icons.settings_outlined,
-              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF1E293B),
+              color: isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary,
               size: 20,
             ),
             tooltip: _isAmharic ? 'ቅንብሮች' : 'Settings',
@@ -3553,7 +3972,7 @@ class _MainScreenState extends State<MainScreen> {
           IconButton(
             icon: const Icon(
               Icons.logout_rounded,
-              color: Color(0xFFBA1A1A),
+              color: AppTheme.roseDanger,
               size: 19,
             ),
             tooltip: _isAmharic ? 'ውጣ' : 'Sign Out',
@@ -3569,55 +3988,40 @@ class _MainScreenState extends State<MainScreen> {
               decoration: BoxDecoration(
                 border: Border(
                   top: BorderSide(
-                    color: isDark
-                        ? const Color(0xFF2E384D)
-                        : const Color(0xFFDAE2FD),
+                    color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
                     width: 1,
                   ),
                 ),
               ),
-              child: BottomNavigationBar(
-                currentIndex: _currentTabIndex,
-                onTap: (index) {
+              child: NavigationBar(
+                selectedIndex: _currentTabIndex,
+                onDestinationSelected: (index) {
                   setState(() {
                     _currentTabIndex = index;
                   });
                 },
-                selectedItemColor: isDark
-                    ? const Color(0xFF93C5FD)
-                    : const Color(0xFF2563EB),
-                unselectedItemColor: isDark
-                    ? const Color(0xFF94A3B8)
-                    : const Color(0xFF64748B),
-                selectedLabelStyle: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 11.5,
-                ),
-                unselectedLabelStyle: const TextStyle(fontSize: 11),
-                type: BottomNavigationBarType.fixed,
-                backgroundColor: isDark
-                    ? const Color(0xFF182036)
-                    : Colors.white,
-                elevation: 6,
-                items: [
-                  BottomNavigationBarItem(
-                    icon: const Icon(Icons.people_outline),
-                    activeIcon: const Icon(Icons.people),
+                backgroundColor: isDark ? AppTheme.darkSurface : AppTheme.lightSurface,
+                elevation: 0,
+                height: 64,
+                destinations: [
+                  NavigationDestination(
+                    icon: const Icon(Icons.people_outline_rounded),
+                    selectedIcon: const Icon(Icons.people_rounded),
                     label: _isAmharic ? 'ደንበኛ' : 'Customer',
                   ),
-                  BottomNavigationBarItem(
+                  NavigationDestination(
                     icon: const Icon(Icons.business_outlined),
-                    activeIcon: const Icon(Icons.business),
+                    selectedIcon: const Icon(Icons.business_rounded),
                     label: _isAmharic ? 'አቅራቢ' : 'Supplier',
                   ),
-                  BottomNavigationBarItem(
+                  NavigationDestination(
                     icon: const Icon(Icons.handshake_outlined),
-                    activeIcon: const Icon(Icons.handshake),
+                    selectedIcon: const Icon(Icons.handshake_rounded),
                     label: _isAmharic ? 'ደላላ' : 'Delala',
                   ),
-                  BottomNavigationBarItem(
+                  NavigationDestination(
                     icon: const Icon(Icons.inventory_2_outlined),
-                    activeIcon: const Icon(Icons.inventory_2),
+                    selectedIcon: const Icon(Icons.inventory_2_rounded),
                     label: _isAmharic ? 'መደብር' : 'Store',
                   ),
                 ],
@@ -3634,80 +4038,77 @@ class _MainScreenState extends State<MainScreen> {
                   children: [
                     // Search Bar directly at the top of the screen content
                     Container(
-                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-                      child: TextField(
-                        controller: _searchController,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: theme.colorScheme.onSurface,
+                      padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isDark ? AppTheme.darkSurface : AppTheme.lightSurface,
+                          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                          border: Border.all(
+                            color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
+                            width: 1.0,
+                          ),
+                          boxShadow: AppTheme.softShadow(isDark),
                         ),
-                        decoration: InputDecoration(
-                          hintText: _currentTabIndex == 3
-                              ? (_isAmharic
-                                    ? 'የመደብር ዕቃዎችን በስም ወይም በዝርዝር ፈልግ...'
-                                    : 'Search Store Inventory by name, item...')
-                              : _currentTabIndex == 2
-                              ? (_isAmharic
-                                    ? 'በስም ወይም በዕቃ ፈልግ...'
-                                    : 'Search by name or product...')
-                              : (_isAmharic
-                                    ? 'በስም ወይም በማስታወሻ ፈልግ...'
-                                    : 'Search $_currentTabLabel by name, item...'),
-                          hintStyle: TextStyle(
-                            fontSize: 11.5,
-                            color: isDark
-                                ? const Color(0xFF64748B)
-                                : const Color(0xFF94A3B8),
+                        child: TextField(
+                          controller: _searchController,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: theme.colorScheme.onSurface,
                           ),
-                          prefixIcon: Icon(
-                            Icons.search,
-                            size: 16,
-                            color: isDark
-                                ? const Color(0xFF64748B)
-                                : const Color(0xFF94A3B8),
-                          ),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 14),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() => _searchQuery = '');
-                                  },
-                                )
-                              : null,
-                          filled: true,
-                          fillColor: isDark
-                              ? const Color(0xFF1B2234)
-                              : Colors.white,
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 7,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(
+                          decoration: InputDecoration(
+                            hintText: _currentTabIndex == 3
+                                ? (_isAmharic
+                                      ? 'የመደብር ዕቃዎችን በስም ወይም በዝርዝር ፈልግ...'
+                                      : 'Search Store Inventory by name, item...')
+                                : _currentTabIndex == 2
+                                ? (_isAmharic
+                                      ? 'በስም ወይም በዕቃ ፈልግ...'
+                                      : 'Search by name or product...')
+                                : (_isAmharic
+                                      ? 'በስም ወይም በማስታወሻ ፈልግ...'
+                                      : 'Search $_currentTabLabel by name, item...'),
+                            hintStyle: TextStyle(
+                              fontSize: 12.5,
                               color: isDark
-                                  ? const Color(0xFF2E384D)
-                                  : const Color(0xFFDAE2FD),
+                                  ? AppTheme.darkTextTertiary
+                                  : AppTheme.lightTextTertiary,
                             ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              size: 18,
                               color: isDark
-                                  ? const Color(0xFF2E384D)
-                                  : const Color(0xFFDAE2FD),
+                                  ? AppTheme.darkTextSecondary
+                                  : AppTheme.lightTextSecondary,
                             ),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.close_rounded, size: 16),
+                                    color: isDark
+                                        ? AppTheme.darkTextSecondary
+                                        : AppTheme.lightTextSecondary,
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                  )
+                                : null,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
                           ),
+                          onChanged: (val) {
+                            setState(() => _searchQuery = val);
+                          },
                         ),
-                        onChanged: (val) {
-                          setState(() => _searchQuery = val);
-                        },
                       ),
                     ),
 
-                    // Statement Summary Card (for Customer, Supplier, Delala, and Store)
+                    // Statement Summary Cards (for Customer, Supplier, Delala, and Store)
                     _buildStatementSummary(theme, isDark),
 
                     // Content view: Store Inventory on Hand for Stock; Excel Ledgers for Parties & Delala
@@ -3725,15 +4126,15 @@ class _MainScreenState extends State<MainScreen> {
                                               children: [
                                                 const Icon(
                                                   Icons.cloud_off_rounded,
-                                                  size: 42,
-                                                  color: Color(0xFFBA1A1A),
+                                                  size: 44,
+                                                  color: AppTheme.roseDanger,
                                                 ),
                                                 const SizedBox(height: 12),
-                                                const Text(
-                                                  'Online Connection Required',
-                                                  style: TextStyle(
+                                                Text(
+                                                  _isAmharic ? 'የኢንተርኔት ግንኙነት የለም' : 'Connection Required',
+                                                  style: const TextStyle(
                                                     fontWeight: FontWeight.bold,
-                                                    fontSize: 14,
+                                                    fontSize: 15,
                                                   ),
                                                 ),
                                                 const SizedBox(height: 6),
@@ -3741,79 +4142,55 @@ class _MainScreenState extends State<MainScreen> {
                                                   _errorMessage!,
                                                   textAlign: TextAlign.center,
                                                   style: TextStyle(
-                                                    fontSize: 11.5,
+                                                    fontSize: 12,
                                                     color: isDark
-                                                        ? const Color(
-                                                            0xFF94A3B8,
-                                                          )
-                                                        : const Color(
-                                                            0xFF64748B,
-                                                          ),
+                                                        ? AppTheme.darkTextSecondary
+                                                        : AppTheme.lightTextSecondary,
                                                   ),
                                                 ),
-                                                const SizedBox(height: 16),
+                                                const SizedBox(height: 18),
                                                 ElevatedButton.icon(
                                                   onPressed:
                                                       _loadStoresAndRecords,
                                                   style:
                                                       ElevatedButton.styleFrom(
                                                         backgroundColor:
-                                                            const Color(
-                                                              0xFF2563EB,
-                                                            ),
+                                                            AppTheme.primaryBlue,
                                                         foregroundColor:
                                                             Colors.white,
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                                                        ),
                                                       ),
                                                   icon: const Icon(
-                                                    Icons.refresh,
+                                                    Icons.refresh_rounded,
                                                     size: 16,
                                                   ),
-                                                  label: const Text(
-                                                    'Retry Connection',
+                                                  label: Text(
+                                                    _isAmharic ? 'እንደገና ሞክር' : 'Retry Connection',
                                                   ),
                                                 ),
                                               ],
                                             ),
                                           ),
                                         )
-                                      : Center(
-                                          child: Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              Icon(
-                                                Icons.table_chart_outlined,
-                                                size: 38,
-                                                color: Colors.grey.shade400,
-                                              ),
-                                              const SizedBox(height: 8),
-                                              Text(
-                                                _isAmharic
-                                                    ? 'ምንም $_currentTabLabel አልተገኘም'
-                                                    : 'No $_currentTabLabel entries found',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13.5,
-                                                  color: isDark
-                                                      ? const Color(0xFF94A3B8)
-                                                      : const Color(0xFF64748B),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                _isAmharic
-                                                    ? 'አዲስ መዝገብ ለማስገባት "+" ይጫኑ'
-                                                    : 'Tap "+" to add a new transaction entry',
-                                                style: const TextStyle(
-                                                  fontSize: 11.5,
-                                                  color: Color(0xFF94A3B8),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
+                                      : AppEmptyState(
+                                          icon: _currentTabIndex == 2
+                                              ? Icons.handshake_outlined
+                                              : _currentTabIndex == 1
+                                              ? Icons.business_outlined
+                                              : Icons.people_outline,
+                                          title: _isAmharic
+                                              ? 'ምንም $_currentTabLabel አልተገኘም'
+                                              : 'No $_currentTabLabel entries found',
+                                          message: _isAmharic
+                                              ? 'አዲስ መዝገብ ለማስገባት "+" የሚለውን ቁልፍ ይጫኑ'
+                                              : 'Tap "+" to add a new transaction entry',
+                                          buttonLabel: _isAmharic ? 'አዲስ መዝገብ አስገባ' : 'Add Entry',
+                                          onButtonPressed: _openCreateRecordDialog,
                                         ))
                                 : ListView.builder(
-                                    padding: const EdgeInsets.only(bottom: 75),
+                                    padding: const EdgeInsets.only(bottom: 80),
                                     itemCount: records.length,
                                     itemBuilder: (ctx, index) {
                                       return _buildRecordTable(

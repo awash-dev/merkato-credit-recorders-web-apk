@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:et_date_picker/et_date_picker.dart';
 import '../models/inventory_product.dart';
+import '../models/store.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/language_service.dart';
 import '../services/ethiopian_calendar.dart';
+import '../theme/app_theme.dart';
 
 /// Reusable Store Entry Dialog for Stock In (+) and Stock Out (-)
 ///
@@ -18,6 +20,7 @@ import '../services/ethiopian_calendar.dart';
 /// - Strict protection against negative inventory on Stock Out
 class StockTransactionDialog extends StatefulWidget {
   final AppUser currentUser;
+  final List<Store> availableStores;
   final String? activeStoreId;
   final List<InventoryProduct> availableProducts;
   final InventoryProduct? preselectedProduct;
@@ -27,6 +30,7 @@ class StockTransactionDialog extends StatefulWidget {
   const StockTransactionDialog({
     super.key,
     required this.currentUser,
+    this.availableStores = const [],
     this.activeStoreId,
     required this.availableProducts,
     this.preselectedProduct,
@@ -42,6 +46,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
   final _formKey = GlobalKey<FormState>();
 
   late String _movementType; // 'IN' or 'OUT'
+  late String _selectedStoreId;
   String _packaging = 'Carton'; // 'Carton' or 'Piece'
   InventoryProduct? _selectedProduct;
 
@@ -50,6 +55,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
   final _pcsPerCartonController = TextEditingController(text: '1');
   final _unitPriceController = TextEditingController();
   final _partyController = TextEditingController();
+  final _refNumberController = TextEditingController();
   final _notesController = TextEditingController();
   final _dateController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
@@ -71,6 +77,20 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
       lang: widget.isAmharic ? 'am' : 'en',
     );
 
+    // Initialize selected store ID
+    final validStores = widget.availableStores.where((s) => s.id != 'all').toList();
+    if (widget.activeStoreId != null &&
+        widget.activeStoreId != 'all' &&
+        validStores.any((s) => s.id == widget.activeStoreId)) {
+      _selectedStoreId = widget.activeStoreId!;
+    } else if (validStores.isNotEmpty) {
+      _selectedStoreId = validStores.first.id;
+    } else if (widget.currentUser.storeId != null && widget.currentUser.storeId!.isNotEmpty) {
+      _selectedStoreId = widget.currentUser.storeId!;
+    } else {
+      _selectedStoreId = '';
+    }
+
     _quantityController.addListener(_onFieldChanged);
     _pcsPerCartonController.addListener(_onFieldChanged);
     _unitPriceController.addListener(_onFieldChanged);
@@ -91,6 +111,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
     _pcsPerCartonController.dispose();
     _unitPriceController.dispose();
     _partyController.dispose();
+    _refNumberController.dispose();
     _notesController.dispose();
     _dateController.dispose();
     super.dispose();
@@ -107,9 +128,9 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
       showSelectedDatePreview: true,
-      useEthiopicNumerals: widget.isAmharic,
-      cancelText: widget.isAmharic ? 'ሰርዝ' : 'Cancel',
-      confirmText: widget.isAmharic ? 'ይሁን' : 'OK',
+      useEthiopicNumerals: false,
+      cancelText: LanguageService.t('cancel'),
+      confirmText: LanguageService.t('confirm'),
     );
     if (result == null) return;
     final picked = result.gregorianDate;
@@ -270,6 +291,14 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
   bool get _isStockOutExceeded =>
       _isStockOut && (_selectedProduct == null || _totalPieces > _availablePieces);
 
+  String get _selectedStoreName {
+    final match = widget.availableStores.where((s) => s.id == _selectedStoreId);
+    if (match.isNotEmpty) return match.first.name;
+    final own = widget.currentUser.storeName;
+    if (own != null && own.isNotEmpty) return own;
+    return widget.isAmharic ? 'መደብር' : 'Store Location';
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -310,6 +339,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
       return;
     }
 
+    // Directly record to DB without confirmation dialog
     setState(() {
       _isSaving = true;
       _errorMessage = null;
@@ -318,6 +348,15 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
     try {
       final cartons = _packaging == 'Carton' ? _enteredQty : (_totalPieces / _pcsPerCarton);
       final loosePieces = _packaging == 'Piece' ? _enteredQty : 0.0;
+
+      final combinedNotes = [
+        if (_refNumberController.text.trim().isNotEmpty) 'Ref: ${_refNumberController.text.trim()}',
+        if (_notesController.text.trim().isNotEmpty) _notesController.text.trim(),
+      ].join(' · ');
+
+      final effectiveStoreId = _selectedStoreId.isNotEmpty
+          ? _selectedStoreId
+          : (_selectedProduct?.storeId ?? widget.activeStoreId);
 
       final updated = await ApiService.recordStockMovement(
         productId: _selectedProduct?.id,
@@ -329,12 +368,12 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
         loosePieces: loosePieces,
         pcsPerCarton: _pcsPerCarton,
         party: _partyController.text.trim().isNotEmpty ? _partyController.text.trim() : null,
-        note: _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null,
+        note: combinedNotes.isNotEmpty ? combinedNotes : null,
         transactionDate:
             '${_selectedDate.year.toString().padLeft(4, '0')}-'
             '${_selectedDate.month.toString().padLeft(2, '0')}-'
             '${_selectedDate.day.toString().padLeft(2, '0')}',
-        storeId: _selectedProduct?.storeId ?? widget.activeStoreId,
+        storeId: effectiveStoreId,
         createdBy: widget.currentUser.id,
       );
 
@@ -353,10 +392,14 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    const inputFillColor = Color(0xFFF8FAFC);
-    const inputBorderColor = Color(0xFFE2E8F0);
-    const primaryTextColor = Color(0xFF0F172A);
-    const labelTextColor = Color(0xFF475569);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final dialogBg = isDark ? AppTheme.darkSurface : AppTheme.lightSurface;
+    final inputFillColor = isDark ? AppTheme.darkSurfaceAlt : const Color(0xFFF8FAFC);
+    final inputBorderColor = isDark ? AppTheme.darkBorder : const Color(0xFFE2E8F0);
+    final primaryTextColor = isDark ? AppTheme.darkTextPrimary : const Color(0xFF0F172A);
+    final labelTextColor = isDark ? AppTheme.darkTextSecondary : const Color(0xFF475569);
+    final subPanelBg = isDark ? AppTheme.darkSurfaceAlt : const Color(0xFFF1F5F9);
 
     final canSubmit = !_isSaving &&
         _productNameController.text.trim().isNotEmpty &&
@@ -364,7 +407,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
         !(_isStockOut && (_selectedProduct == null || _isStockOutExceeded));
 
     return Dialog(
-      backgroundColor: Colors.white,
+      backgroundColor: dialogBg,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
@@ -392,7 +435,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                           const SizedBox(width: 8),
                           Text(
                             widget.isAmharic ? 'የዕቃ መዝገብ' : 'Store Entry',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w900,
                               color: primaryTextColor,
@@ -410,10 +453,122 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                   ),
                   const SizedBox(height: 14),
 
+                  // --- 1. SELECTED STORE LOCATION (Prominent & Required) ---
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppTheme.darkSurfaceAlt : const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark ? AppTheme.darkBorder : const Color(0xFFBFDBFE),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.storefront_rounded, size: 16, color: AppTheme.primaryBlue),
+                                const SizedBox(width: 6),
+                                Text(
+                                  widget.isAmharic ? 'የሚመዘገብበት መደብር *' : 'Target Store Location *',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.primaryBlue,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryBlue.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                widget.isAmharic ? 'የግዴታ' : 'REQUIRED',
+                                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: AppTheme.primaryBlue),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        if (widget.availableStores.where((s) => s.id != 'all').length > 1)
+                          DropdownButtonFormField<String>(
+                            initialValue: widget.availableStores.any((s) => s.id == _selectedStoreId)
+                                ? _selectedStoreId
+                                : (widget.availableStores.where((s) => s.id != 'all').isNotEmpty
+                                    ? widget.availableStores.where((s) => s.id != 'all').first.id
+                                    : null),
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: isDark ? AppTheme.darkSurface : Colors.white,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              isDense: true,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            items: widget.availableStores.where((s) => s.id != 'all').map((s) => DropdownMenuItem(
+                              value: s.id,
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.store_rounded, size: 16, color: AppTheme.emeraldGreen),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      s.name,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 13,
+                                        color: primaryTextColor,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() {
+                                  _selectedStoreId = val;
+                                  _selectedProduct = null;
+                                  _productNameController.clear();
+                                });
+                              }
+                            },
+                          )
+                        else
+                          Row(
+                            children: [
+                              const Icon(Icons.store_rounded, size: 16, color: AppTheme.emeraldGreen),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _selectedStoreName,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13.5,
+                                    color: primaryTextColor,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+
                   // --- 2. STOCK MOVEMENT BUTTONS (Stock In / Stock Out) ---
                   Text(
-                    widget.isAmharic ? 'የዕቃ ዝውውር' : 'Stock Movement',
-                    style: const TextStyle(
+                    LanguageService.t('stockMovement'),
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                       color: labelTextColor,
@@ -469,7 +624,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  widget.isAmharic ? 'ዕቃ ገቢ (+)' : 'Stock In (+)',
+                                  LanguageService.t('stockIn'),
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.bold,
@@ -529,7 +684,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  widget.isAmharic ? 'ዕቃ ወጪ (-)' : 'Stock Out (-)',
+                                  LanguageService.t('stockOut'),
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.bold,
@@ -567,8 +722,8 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
 
                   // --- 3. ITEM SELECTION (Searchable Product Input) ---
                   Text(
-                    widget.isAmharic ? 'የዕቃ ስም' : 'Item Name',
-                    style: const TextStyle(
+                    LanguageService.t('itemName'),
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                       color: labelTextColor,
@@ -598,13 +753,13 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                         controller: controller,
                         focusNode: focusNode,
                         onEditingComplete: onEditingComplete,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13.5,
                           fontWeight: FontWeight.bold,
                           color: primaryTextColor,
                         ),
                         decoration: InputDecoration(
-                          hintText: widget.isAmharic ? 'ዕቃ ይፈልጉ ወይም አዲስ ስም ያስገቡ...' : 'Search product or enter new name...',
+                          hintText: LanguageService.t('searchProductNewName'),
                           hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
                           prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
                           suffixIcon: _productNameController.text.isNotEmpty
@@ -623,11 +778,11 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                           fillColor: inputFillColor,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: inputBorderColor),
+                            borderSide: BorderSide(color: inputBorderColor),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: inputBorderColor),
+                            borderSide: BorderSide(color: inputBorderColor),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
@@ -650,7 +805,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
+                        color: subPanelBg,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: inputBorderColor),
                       ),
@@ -662,7 +817,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                             children: [
                               Text(
                                 _selectedProduct!.productName,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w900,
                                   fontSize: 14,
                                   color: primaryTextColor,
@@ -694,11 +849,11 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                             children: [
                               Text(
                                 '${widget.isAmharic ? "ፍሬ በካርቶን" : "Pieces/Carton"}: ${_selectedProduct!.pcsPerCarton.toInt()}',
-                                style: const TextStyle(fontSize: 11, color: labelTextColor, fontWeight: FontWeight.w600),
+                                style: TextStyle(fontSize: 11, color: labelTextColor, fontWeight: FontWeight.w600),
                               ),
                               Text(
                                 '${widget.isAmharic ? "የአንዱ ዋጋ" : "Unit Price"}: ${_currencyFormat.format(_selectedProduct!.unitPrice > 0 ? _selectedProduct!.unitPrice : _selectedProduct!.costPrice)} ${widget.isAmharic ? "ብር" : "ETB"}',
-                                style: const TextStyle(fontSize: 11, color: labelTextColor, fontWeight: FontWeight.w600),
+                                style: TextStyle(fontSize: 11, color: labelTextColor, fontWeight: FontWeight.w600),
                               ),
                             ],
                           ),
@@ -719,8 +874,8 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              widget.isAmharic ? 'ብዛት' : 'Quantity',
-                              style: const TextStyle(
+                              LanguageService.t('quantity'),
+                              style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
                                 color: labelTextColor,
@@ -730,18 +885,18 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                             TextFormField(
                               controller: _quantityController,
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: primaryTextColor),
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: primaryTextColor),
                               decoration: InputDecoration(
                                 hintText: '1',
                                 filled: true,
                                 fillColor: inputFillColor,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: const BorderSide(color: inputBorderColor),
+                                  borderSide: BorderSide(color: inputBorderColor),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: const BorderSide(color: inputBorderColor),
+                                  borderSide: BorderSide(color: inputBorderColor),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
@@ -762,8 +917,8 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              widget.isAmharic ? 'ማሸጊያ' : 'Packaging',
-                              style: const TextStyle(
+                              LanguageService.t('packaging'),
+                              style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
                                 color: labelTextColor,
@@ -787,12 +942,14 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                                       child: Container(
                                         alignment: Alignment.center,
                                         decoration: BoxDecoration(
-                                          color: _packaging == 'Carton' ? Colors.white : Colors.transparent,
+                                          color: _packaging == 'Carton'
+                                              ? (isDark ? AppTheme.darkSurface : Colors.white)
+                                              : Colors.transparent,
                                           borderRadius: BorderRadius.circular(6),
                                           boxShadow: _packaging == 'Carton'
                                               ? [
                                                   BoxShadow(
-                                                    color: Colors.black.withValues(alpha: 0.05),
+                                                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
                                                     blurRadius: 2,
                                                     offset: const Offset(0, 1),
                                                   ),
@@ -800,7 +957,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                                               : null,
                                         ),
                                         child: Text(
-                                          widget.isAmharic ? 'ካርቶን' : 'Carton',
+                                          LanguageService.t('carton'),
                                           style: TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
@@ -817,12 +974,14 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                                       child: Container(
                                         alignment: Alignment.center,
                                         decoration: BoxDecoration(
-                                          color: _packaging == 'Piece' ? Colors.white : Colors.transparent,
+                                          color: _packaging == 'Piece'
+                                              ? (isDark ? AppTheme.darkSurface : Colors.white)
+                                              : Colors.transparent,
                                           borderRadius: BorderRadius.circular(6),
                                           boxShadow: _packaging == 'Piece'
                                               ? [
                                                   BoxShadow(
-                                                    color: Colors.black.withValues(alpha: 0.05),
+                                                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
                                                     blurRadius: 2,
                                                     offset: const Offset(0, 1),
                                                   ),
@@ -830,7 +989,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                                               : null,
                                         ),
                                         child: Text(
-                                          widget.isAmharic ? 'ፍሬ' : 'Piece',
+                                          LanguageService.t('pieces'),
                                           style: TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
@@ -853,8 +1012,8 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                   // Pieces per Carton Input (shown only when packaging is Carton)
                   if (_packaging == 'Carton') ...[
                     Text(
-                      widget.isAmharic ? 'ፍሬ በካርቶን' : 'Pieces / Carton',
-                      style: const TextStyle(
+                      LanguageService.t('piecesPerCtn'),
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                         color: labelTextColor,
@@ -864,7 +1023,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                     TextFormField(
                       controller: _pcsPerCartonController,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
                         color: primaryTextColor,
@@ -875,11 +1034,11 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                         fillColor: inputFillColor,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: inputBorderColor),
+                          borderSide: BorderSide(color: inputBorderColor),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: inputBorderColor),
+                          borderSide: BorderSide(color: inputBorderColor),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -926,6 +1085,161 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                     ),
                   ],
 
+                  // Party (Supplier for IN / Recipient for OUT) & Ref #
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 12,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _isStockOut
+                                  ? (widget.isAmharic ? 'ተቀባይ / መዳረሻ' : 'Recipient / Destination')
+                                  : (widget.isAmharic ? 'አቅራቢ / ምንጭ' : 'Supplier / Source'),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: labelTextColor,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            TextFormField(
+                              controller: _partyController,
+                              style: TextStyle(fontSize: 12.5, color: primaryTextColor),
+                              decoration: InputDecoration(
+                                hintText: _isStockOut
+                                    ? (widget.isAmharic ? 'ለምሳሌ፡ ሽያጭ፣ ደንበኛ' : 'e.g. Sales, Customer')
+                                    : (widget.isAmharic ? 'የአቅራቢ ስም' : 'Supplier Name'),
+                                filled: true,
+                                fillColor: inputFillColor,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(color: inputBorderColor),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        flex: 12,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.isAmharic ? 'ማጣቀሻ ቁጥር (Ref #)' : 'Reference #',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: labelTextColor,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            TextFormField(
+                              controller: _refNumberController,
+                              style: TextStyle(fontSize: 12.5, color: primaryTextColor),
+                              decoration: InputDecoration(
+                                hintText: widget.isAmharic ? 'ደረሰኝ / Waybill #' : 'Invoice / Waybill #',
+                                filled: true,
+                                fillColor: inputFillColor,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(color: inputBorderColor),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Live Stock Preview Box
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _isStockOutExceeded
+                          ? const Color(0xFFFEF2F2)
+                          : (isDark ? AppTheme.darkSurfaceAlt : const Color(0xFFF8FAFC)),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _isStockOutExceeded
+                            ? const Color(0xFFFECACA)
+                            : (isDark ? AppTheme.darkBorder : const Color(0xFFE2E8F0)),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              widget.isAmharic ? 'በመደብሩ ያለ አሁን ክምችት:' : 'Current Stock in Store:',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: labelTextColor),
+                            ),
+                            Text(
+                              '${_availablePieces.toInt()} pcs',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: primaryTextColor),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              _isStockOut
+                                  ? (widget.isAmharic ? 'የሚወጣ መጠን (-):' : 'Outgoing Quantity (-):')
+                                  : (widget.isAmharic ? 'የሚገባ መጠን (+):' : 'Incoming Quantity (+):'),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: _isStockOut ? AppTheme.roseDanger : AppTheme.emeraldGreen,
+                              ),
+                            ),
+                            Text(
+                              '${_isStockOut ? '-' : '+'}${_totalPieces.toInt()} pcs',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                color: _isStockOut ? AppTheme.roseDanger : AppTheme.emeraldGreen,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              widget.isAmharic ? 'ከግብይት በኋላ የሚጠበቅ ክምችት:' : 'Expected New Balance:',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: primaryTextColor),
+                            ),
+                            Text(
+                              '${(_isStockOut ? (_availablePieces - _totalPieces) : (_availablePieces + _totalPieces)).toInt()} pcs',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w900,
+                                color: _isStockOutExceeded
+                                    ? AppTheme.roseDanger
+                                    : AppTheme.primaryBlue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
                   // Date and Note
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -937,8 +1251,8 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              widget.isAmharic ? 'ቀን' : 'Date',
-                              style: const TextStyle(
+                              LanguageService.t('date'),
+                              style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
                                 color: labelTextColor,
@@ -955,7 +1269,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                                   fillColor: inputFillColor,
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
-                                    borderSide: const BorderSide(color: inputBorderColor),
+                                    borderSide: BorderSide(color: inputBorderColor),
                                   ),
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 10,
@@ -964,7 +1278,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                                 ),
                                 child: Text(
                                   _dateController.text,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.bold,
                                     color: primaryTextColor,
@@ -984,8 +1298,8 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              widget.isAmharic ? 'ማስታወሻ' : 'Note',
-                              style: const TextStyle(
+                              LanguageService.t('note'),
+                              style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
                                 color: labelTextColor,
@@ -994,18 +1308,18 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                             const SizedBox(height: 4),
                             TextFormField(
                               controller: _notesController,
-                              style: const TextStyle(fontSize: 12.5, color: primaryTextColor),
+                              style: TextStyle(fontSize: 12.5, color: primaryTextColor),
                               decoration: InputDecoration(
-                                hintText: widget.isAmharic ? 'ምሳሌ፡ ደረሰኝ ቁጥር' : 'e.g. INV-1049',
+                                hintText: LanguageService.t('noteHint'),
                                 filled: true,
                                 fillColor: inputFillColor,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: const BorderSide(color: inputBorderColor),
+                                  borderSide: BorderSide(color: inputBorderColor),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: const BorderSide(color: inputBorderColor),
+                                  borderSide: BorderSide(color: inputBorderColor),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
@@ -1032,7 +1346,7 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         ),
                         child: Text(
-                          widget.isAmharic ? 'ይቅር' : 'Cancel',
+                          LanguageService.t('cancel'),
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -1057,10 +1371,10 @@ class _StockTransactionDialogState extends State<StockTransactionDialog> {
                             : const Icon(Icons.check, size: 16),
                         label: Text(
                           _isSaving
-                              ? (widget.isAmharic ? 'በመመዝገብ ላይ...' : 'Saving...')
+                              ? LanguageService.t('saving')
                               : (_isStockOut
-                                  ? (widget.isAmharic ? 'ወጪ መዝግብ' : 'Save Stock Out')
-                                  : (widget.isAmharic ? 'ገቢ መዝግብ' : 'Save Stock In')),
+                                  ? LanguageService.t('saveStockOut')
+                                  : (LanguageService.t('saveStockIn'))),
                           style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
                         ),
                       ),

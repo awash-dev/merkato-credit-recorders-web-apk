@@ -853,6 +853,54 @@ class ApiService {
     return await NeonDatabaseService.getProductStockMovementsDirect(productId);
   }
 
+  static Future<List<StockMovement>> getAllStockMovements({
+    String? storeId,
+    String? movementType,
+    int limit = 150,
+  }) async {
+    return await NeonDatabaseService.getAllStockMovementsDirect(
+      storeId: storeId,
+      movementType: movementType,
+      limit: limit,
+    );
+  }
+
+  static Future<Map<String, dynamic>> transferStock({
+    required String fromStoreId,
+    required String toStoreId,
+    required String fromStoreName,
+    required String toStoreName,
+    required String productId,
+    required String productName,
+    required double totalPieces,
+    required double unitPrice,
+    double cartons = 0,
+    double loosePieces = 0,
+    double pcsPerCarton = 1,
+    String? note,
+    String? referenceNumber,
+    String? transactionDate,
+    String? createdBy,
+  }) async {
+    return await NeonDatabaseService.transferStockDirect(
+      fromStoreId: fromStoreId,
+      toStoreId: toStoreId,
+      fromStoreName: fromStoreName,
+      toStoreName: toStoreName,
+      productId: productId,
+      productName: productName,
+      totalPieces: totalPieces,
+      unitPrice: unitPrice,
+      cartons: cartons,
+      loosePieces: loosePieces,
+      pcsPerCarton: pcsPerCarton,
+      note: note,
+      referenceNumber: referenceNumber,
+      transactionDate: transactionDate,
+      createdBy: createdBy,
+    );
+  }
+
   static Future<InventoryProduct> updateInventoryProduct({
     required String id,
     String? productName,

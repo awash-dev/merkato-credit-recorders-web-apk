@@ -16,6 +16,8 @@ import '../services/app_settings_service.dart';
 import '../services/ethiopian_calendar.dart';
 import '../services/telegram_share.dart';
 import '../widgets/telebirr_background.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_components.dart';
 
 class StatementScreen extends StatefulWidget {
   final String accountName;
@@ -74,6 +76,16 @@ class _StatementScreenState extends State<StatementScreen> {
     return EthiopianCalendar.formatAnyDate(rawDate, lang: _isAmharic ? 'am' : 'en');
   }
 
+  String _formatDescription(String desc) {
+    if (desc == 'Other Transactions' ||
+        desc == 'ሌሎች ግብይቶች' ||
+        desc == 'delalaReturnedPaid' ||
+        desc == 'purchaseBoughtGoods') {
+      return _isAmharic ? 'ሌሎች ግብይቶች' : 'Other Transactions';
+    }
+    return desc;
+  }
+
   Future<void> _loadStatement() async {
     setState(() {
       _isLoading = true;
@@ -111,7 +123,7 @@ class _StatementScreenState extends State<StatementScreen> {
         ? st.storeName
         : (customTitle.toLowerCase().contains('merkato') ||
                 customTitle.toLowerCase().contains('መርካቶ')
-            ? (_isAmharic ? 'መደብር' : 'Store')
+            ? (_isAmharic ? 'መደብር' : LanguageService.t('store'))
             : customTitle);
 
     final dateDisplay = _isAmharic
@@ -138,10 +150,10 @@ class _StatementScreenState extends State<StatementScreen> {
     // 2. Build full formatted statement summary
     final buffer = StringBuffer();
     buffer.writeln('🏪 $displayName');
-    buffer.writeln('${_isAmharic ? "የሂሳብ ስም" : "Account"}: ${st.accountName} (${st.accountType.toUpperCase()})');
-    buffer.writeln('${_isAmharic ? "ቀን" : "Date"}: $dateDisplay ($timeDisplay)');
+    buffer.writeln('${LanguageService.t('account').replaceAll(':', '')}: ${st.accountName} (${st.accountType.toUpperCase()})');
+    buffer.writeln('${LanguageService.t('date')}: $dateDisplay ($timeDisplay)');
     buffer.writeln('----------------------------------------');
-    buffer.writeln('${_isAmharic ? "የዕቃዎች ዝርዝር" : "ITEMS"}:');
+    buffer.writeln('${LanguageService.t('items')}:');
 
     for (final entry in st.entries) {
       final qtyStr = entry.quantity % 1 == 0
@@ -149,21 +161,21 @@ class _StatementScreenState extends State<StatementScreen> {
           : entry.quantity.toString();
       final priceStr = _currencyFormat.format(entry.unitPrice);
       if (entry.debit > 0) {
-        buffer.writeln('• ${entry.description}');
+        buffer.writeln('• ${_formatDescription(entry.description)}');
         buffer.writeln('  $qtyStr x $priceStr = ${_currencyFormat.format(entry.debit)} ETB');
       } else if (entry.credit > 0) {
         final bankSuffix = entry.bank != null ? ' [${entry.bank}]' : '';
-        buffer.writeln('• ${entry.description}$bankSuffix');
-        buffer.writeln('  ${_currencyFormat.format(entry.credit)} ETB (${_isAmharic ? "ገቢ" : "Payment"})');
+        buffer.writeln('• ${_formatDescription(entry.description)}$bankSuffix');
+        buffer.writeln('  ${_currencyFormat.format(entry.credit)} ETB (${LanguageService.t('payment')})');
       } else {
-        buffer.writeln('• ${entry.description}');
+        buffer.writeln('• ${_formatDescription(entry.description)}');
       }
     }
 
     buffer.writeln('----------------------------------------');
-    buffer.writeln('${_isAmharic ? "ጠቅላላ ሂሳብ" : "Total Amount"}: ETB ${_currencyFormat.format(st.totals.totalDebit)}');
-    buffer.writeln('${_isAmharic ? "ጠቅላላ ገቢ (ክፍያ)" : "Total Payment (ገቢ)"}: ETB ${_currencyFormat.format(st.totals.totalCredit)}');
-    buffer.writeln('${_isAmharic ? "የተጣራ ቀሪ ሂሳብ" : "OUTSTANDING BALANCE"}: ETB ${_currencyFormat.format(st.totals.outstanding)}');
+    buffer.writeln('${LanguageService.t('totalAmount')}: ETB ${_currencyFormat.format(st.totals.totalDebit)}');
+    buffer.writeln('${LanguageService.t('totalPayment')}: ETB ${_currencyFormat.format(st.totals.totalCredit)}');
+    buffer.writeln('${LanguageService.t('outstandingBalanceLabel')}: ETB ${_currencyFormat.format(st.totals.outstanding)}');
 
     final text = buffer.toString();
 
@@ -192,9 +204,7 @@ class _StatementScreenState extends State<StatementScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  _isAmharic
-                      ? 'ስክሪንሾት እና መረጃው ተገልብጠዋል! ቴሌግራም ላይ ተጠቃሚውን ብቻ ይምረጡ'
-                      : 'Screenshot & info copied! Select recipient in Telegram...',
+                  LanguageService.t('screenshotCopied'),
                 ),
               ),
             ],
@@ -233,9 +243,9 @@ class _StatementScreenState extends State<StatementScreen> {
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
       showSelectedDatePreview: true,
-      useEthiopicNumerals: _isAmharic,
-      cancelText: _isAmharic ? 'ሰርዝ' : 'Cancel',
-      confirmText: _isAmharic ? 'ይሁን' : 'OK',
+      useEthiopicNumerals: false,
+      cancelText: LanguageService.t('cancel'),
+      confirmText: LanguageService.t('confirm'),
     );
     if (result == null) return;
     final picked = result.gregorianDate;
@@ -349,7 +359,7 @@ class _StatementScreenState extends State<StatementScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                   decoration: InputDecoration(
-                    labelText: _isAmharic ? 'የዕቃው ስም' : 'Item Description',
+                    labelText: LanguageService.t('itemDescription'),
                     labelStyle: const TextStyle(fontSize: 10),
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(
@@ -420,7 +430,7 @@ class _StatementScreenState extends State<StatementScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                   decoration: InputDecoration(
-                    labelText: _isAmharic ? 'ብዛት' : 'Qty',
+                    labelText: LanguageService.t('qty'),
                     labelStyle: const TextStyle(fontSize: 10),
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(
@@ -451,7 +461,7 @@ class _StatementScreenState extends State<StatementScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                   decoration: InputDecoration(
-                    labelText: _isAmharic ? 'ዋጋ' : 'Price',
+                    labelText: LanguageService.t('price'),
                     labelStyle: const TextStyle(fontSize: 10),
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(
@@ -505,7 +515,7 @@ class _StatementScreenState extends State<StatementScreen> {
                         color: Color(0xFF16A34A),
                         size: 28,
                       ),
-                      tooltip: _isAmharic ? 'አስቀምጥ' : 'Save',
+                      tooltip: LanguageService.t('save'),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       onPressed: () => _saveInlineEdit(entry),
@@ -555,7 +565,7 @@ class _StatementScreenState extends State<StatementScreen> {
         ? st.storeName
         : (customTitle.toLowerCase().contains('merkato') ||
                 customTitle.toLowerCase().contains('መርካቶ')
-            ? (_isAmharic ? 'መደብር' : 'Store')
+            ? (_isAmharic ? 'መደብር' : LanguageService.t('store'))
             : customTitle);
 
     final dateDisplay = _isAmharic
@@ -818,7 +828,7 @@ class _StatementScreenState extends State<StatementScreen> {
                                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                                         children: [
                                           pw.Text(
-                                            entry.description,
+                                            _formatDescription(entry.description),
                                             style: pw.TextStyle(
                                               fontSize: 9.5,
                                               fontWeight: pw.FontWeight.bold,
@@ -1087,7 +1097,7 @@ class _StatementScreenState extends State<StatementScreen> {
             // 1. Export / Print PDF Statement
             IconButton(
               icon: const Icon(Icons.print_outlined, size: 21),
-              tooltip: _isAmharic ? 'መግለጫ አትም / ፒዲኤፍ' : 'Print / Export PDF',
+              tooltip: LanguageService.t('printExportPDF'),
               onPressed: () => _printOrExportPdf(shareOnly: false),
             ),
 
@@ -1096,9 +1106,7 @@ class _StatementScreenState extends State<StatementScreen> {
               padding: const EdgeInsets.only(right: 8.0),
               child: IconButton(
                 icon: const TelegramIconWidget(size: 24),
-                tooltip: _isAmharic
-                    ? 'መረጃውን በቴሌግራም ላክ'
-                    : 'Send Statement Info to Telegram',
+                tooltip: LanguageService.t('sendToTelegram'),
                 onPressed: _sendToTelegram,
               ),
             ),
@@ -1111,15 +1119,43 @@ class _StatementScreenState extends State<StatementScreen> {
             ? const Center(child: CircularProgressIndicator())
             : _error != null
             ? Center(
-                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        size: 44,
+                        color: AppTheme.roseDanger,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _error!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.roseDangerDark,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: _loadStatement,
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        label: Text(_isAmharic ? 'እንደገና ሞክር' : 'Retry'),
+                      ),
+                    ],
+                  ),
+                ),
               )
             : _statement == null || _statement!.entries.isEmpty
-            ? Center(
-                child: Text(
-                  _isAmharic
-                      ? 'ምንም የግብይት መዝገብ አልተገኘም'
-                      : 'No transaction records found for this account.',
-                ),
+            ? AppEmptyState(
+                icon: Icons.receipt_long_outlined,
+                title: LanguageService.t('noTransactionRecords'),
+                message: _isAmharic
+                    ? 'ለዚህ አካውንት እስካሁን የተመዘገበ ዝርዝር የለም'
+                    : 'No transaction entries found for this ledger account',
               )
             : _buildStatementContent(_statement!),
       ),
@@ -1141,7 +1177,7 @@ class _StatementScreenState extends State<StatementScreen> {
             ? st.storeName
             : (customTitle.toLowerCase().contains('merkato') ||
                     customTitle.toLowerCase().contains('መርካቶ')
-                ? (_isAmharic ? 'መደብር' : 'Store')
+                ? (_isAmharic ? 'መደብር' : LanguageService.t('store'))
                 : customTitle);
 
         return Column(
@@ -1162,9 +1198,7 @@ class _StatementScreenState extends State<StatementScreen> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                _isAmharic
-                                    ? 'የመደብር ሎጎ በተሳካ ሁኔታ ተቀይሯል!'
-                                    : 'Store logo updated successfully!',
+                                LanguageService.t('logoUpdated'),
                               ),
                               backgroundColor: const Color(0xFF16A34A),
                             ),
@@ -1172,9 +1206,7 @@ class _StatementScreenState extends State<StatementScreen> {
                         }
                       },
                       child: Tooltip(
-                        message: _isAmharic
-                            ? 'የመደብሩን ሎጎ ለመቀየር ይንኩ'
-                            : 'Tap to change store logo image',
+                        message: LanguageService.t('tapToChangeLogo'),
                         child: AppSettingsService.buildLogoWidget(size: 36),
                       ),
                     ),
@@ -1506,7 +1538,7 @@ class _StatementScreenState extends State<StatementScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  entry.description,
+                                  _formatDescription(entry.description),
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,

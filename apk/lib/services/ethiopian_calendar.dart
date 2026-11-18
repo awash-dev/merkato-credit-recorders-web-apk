@@ -166,18 +166,53 @@ class EthiopianCalendar {
     return formatDisplay(now(), lang: lang);
   }
 
-  /// Converts any Gregorian or ISO date string into an authentic Ethiopian date string
+  /// Converts any Ge'ez numeral sequence (፩, ፪, ፫, ፲, etc.) to standard Arabic numbers
+  static String geezToArabic(String text) {
+    if (!text.contains(RegExp(r'[\u1369-\u137C]'))) return text;
+
+    final Map<String, int> geezMap = {
+      '፩': 1, '፪': 2, '፫': 3, '፬': 4, '፭': 5,
+      '፮': 6, '፯': 7, '፰': 8, '፱': 9, '፲': 10,
+      '፳': 20, '፴': 30, '፵': 40, '፶': 50, '፷': 60,
+      '፸': 70, '፹': 80, '፺': 90, '፻': 100, '፼': 10000,
+    };
+
+    return text.replaceAllMapped(RegExp(r'[\u1369-\u137C]+'), (match) {
+      final geezSeq = match.group(0)!;
+      int total = 0;
+      int current = 0;
+      for (int i = 0; i < geezSeq.length; i++) {
+        final ch = geezSeq[i];
+        final val = geezMap[ch] ?? 0;
+        if (val == 100) {
+          total += (current == 0 ? 1 : current) * 100;
+          current = 0;
+        } else if (val == 10000) {
+          total += (current == 0 ? 1 : current) * 10000;
+          current = 0;
+        } else {
+          current += val;
+        }
+      }
+      total += current;
+      return total.toString();
+    });
+  }
+
+  /// Converts any Gregorian, ISO, or Ge'ez date string into an authentic Amharic Ethiopian date string
   static String formatAnyDate(String rawDate, {String lang = 'am'}) {
     if (rawDate.trim().isEmpty) return '';
     try {
+      final cleaned = geezToArabic(rawDate.trim());
       for (final m in monthsAm) {
-        if (m.isNotEmpty && rawDate.contains(m)) return rawDate;
+        if (m.isNotEmpty && cleaned.contains(m)) return cleaned;
       }
       for (final m in monthsEn) {
-        if (m.isNotEmpty && rawDate.contains(m)) return rawDate;
+        if (m.isNotEmpty && cleaned.contains(m)) return cleaned;
       }
 
-      final parts = rawDate.split(RegExp(r'[-/]'));
+      final dateOnly = cleaned.split(RegExp(r'[T\s]'))[0];
+      final parts = dateOnly.split(RegExp(r'[-/]'));
       if (parts.length == 3) {
         final p0 = int.tryParse(parts[0]);
         final p1 = int.tryParse(parts[1]);
@@ -194,11 +229,12 @@ class EthiopianCalendar {
         }
       }
 
-      final dt = DateTime.tryParse(rawDate);
+      final dt = DateTime.tryParse(cleaned);
       if (dt != null) {
         final eth = toEthiopian(dt.year, dt.month, dt.day);
         return formatDisplay(eth, lang: lang);
       }
+      return cleaned;
     } catch (_) {}
     return rawDate;
   }

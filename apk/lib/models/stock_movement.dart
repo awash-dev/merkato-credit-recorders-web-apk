@@ -19,6 +19,8 @@ class StockMovement {
   final String? note;
   final String? createdBy;
   final String? userName;
+  final String? productName;
+  final String? storeName;
   final DateTime? createdAt;
 
   StockMovement({
@@ -42,11 +44,26 @@ class StockMovement {
     this.note,
     this.createdBy,
     this.userName,
+    this.productName,
+    this.storeName,
     this.createdAt,
   });
 
   bool get isIn => movementType.toUpperCase() == 'IN';
   bool get isOut => movementType.toUpperCase() == 'OUT';
+
+  DateTime? get date {
+    try {
+      return DateTime.parse(transactionDate);
+    } catch (_) {
+      return createdAt;
+    }
+  }
+
+  double get totalPieces => quantity;
+  double get quantityCartons => conversionFactor > 0 ? (quantity / conversionFactor).floorToDouble() : 0.0;
+  String? get party => sourceId ?? destination;
+  String? get notes => note;
 
   int get cartons {
     if (conversionFactor <= 0) return 0;
@@ -90,6 +107,8 @@ class StockMovement {
       note: json['note']?.toString(),
       createdBy: json['created_by']?.toString(),
       userName: json['user_name']?.toString(),
+      productName: json['product_name']?.toString() ?? json['productName']?.toString(),
+      storeName: json['store_name']?.toString() ?? json['storeName']?.toString(),
       createdAt: parseDate(json['created_at']),
     );
   }

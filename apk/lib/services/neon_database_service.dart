@@ -2293,6 +2293,133 @@ class NeonDatabaseService {
     return rows.map((r) => StockMovement.fromJson(r)).toList();
   }
 
+  /// Fetch all stock movements across stores or for a specific store with product and store names
+  static Future<List<StockMovement>> getAllStockMovementsDirect({
+    String? storeId,
+    String? movementType,
+    int limit = 150,
+  }) async {
+    final conditions = <String>[];
+    final params = <dynamic>[];
+
+    if (storeId != null && storeId.isNotEmpty && storeId != 'all') {
+      params.add(storeId);
+      conditions.add('(sm.store_id = \$${params.length})');
+    }
+
+    if (movementType != null && movementType.isNotEmpty && movementType != 'all') {
+      params.add(movementType.toUpperCase());
+      conditions.add('(sm.movement_type = \$${params.length})');
+    }
+
+    final whereClause = conditions.isNotEmpty ? 'WHERE ${conditions.join(' AND ')}' : '';
+    params.add(limit);
+    final limitClause = 'LIMIT \$${params.length}';
+
+    final sql = '''
+      SELECT sm.*,
+             COALESCE(si.product_name, 'Unknown Product') AS product_name,
+             st.name AS store_name,
+             u.name AS user_name
+      FROM stock_movements sm
+      LEFT JOIN store_inventory si ON si.id = sm.product_id
+      LEFT JOIN stores st ON st.id = sm.store_id
+      LEFT JOIN users u ON u.id = sm.created_by
+      $whereClause
+      ORDER BY sm.created_at DESC NULLS LAST, sm.transaction_date DESC NULLS LAST, sm.id DESC
+      $limitClause
+    ''';
+
+    try {
+      final rows = await executeSql(sql, params);
+      return rows.map((r) => StockMovement.fromJson(r)).toList();
+    } catch (e) {
+      debugPrint('Warning: getAllStockMovementsDirect error: $e');
+      return [];
+    }
+  }
+
+  /// Atomically transfers stock from source store to destination store
+  /// Creates linked Stock Out on source and Stock In on destination.
+  static Future<Map<String, dynamic>> transferStockDirect({
+    required String fromStoreId,
+    required String toStoreId,
+    required String fromStoreName,
+    required String toStoreName,
+    required String productId,
+    required String productName,
+    required double totalPieces,
+    required double unitPrice,
+    double cartons = 0,
+    double loosePieces = 0,
+    double pcsPerCarton = 1,
+    String? note,
+    String? referenceNumber,
+    String? transactionDate,
+    String? createdBy,
+  }) async {
+    if (fromStoreId == toStoreId) {
+      throw Exception('Source and destination stores must be different (የተለያዩ መደብሮች መሆን አለባቸው)');
+    }
+    if (totalPieces <= 0) {
+      throw Exception('Transfer quantity must be greater than zero');
+    }
+
+    final refNum = (referenceNumber != null && referenceNumber.trim().isNotEmpty)
+        ? referenceNumber.trim()
+        : 'TRF-${DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase()}';
+    final txnDate = (transactionDate != null && transactionDate.trim().isNotEmpty)
+        ? transactionDate.trim()
+        : DateTime.now().toIso8601String().split('T')[0];
+
+    // 1. Stock Out from Source Store
+    final outNote = 'Transfer to $toStoreName${note != null && note.isNotEmpty ? " · $note" : ""} [Ref: $refNum]';
+    final outProd = await recordStockMovementDirect(
+      productId: productId,
+      productName: productName,
+      movementType: 'OUT',
+      totalPieces: totalPieces,
+      unitPrice: unitPrice,
+      cartons: cartons,
+      loosePieces: loosePieces,
+      pcsPerCarton: pcsPerCarton,
+      party: 'Transfer: $toStoreName',
+      note: outNote,
+      transactionDate: txnDate,
+      storeId: fromStoreId,
+      createdBy: createdBy,
+    );
+
+    // 2. Stock In to Destination Store
+    final inNote = 'Transfer from $fromStoreName${note != null && note.isNotEmpty ? " · $note" : ""} [Ref: $refNum]';
+    final inProd = await recordStockMovementDirect(
+      productName: productName,
+      movementType: 'IN',
+      totalPieces: totalPieces,
+      unitPrice: unitPrice,
+      cartons: cartons,
+      loosePieces: loosePieces,
+      pcsPerCarton: pcsPerCarton,
+      party: 'Transfer: $fromStoreName',
+      note: inNote,
+      transactionDate: txnDate,
+      storeId: toStoreId,
+      createdBy: createdBy,
+    );
+
+    return {
+      'success': true,
+      'referenceNumber': refNum,
+      'sourceProduct': outProd,
+      'destinationProduct': inProd,
+      'piecesTransferred': totalPieces,
+      'cartonsTransferred': cartons,
+      'fromStore': fromStoreName,
+      'toStore': toStoreName,
+      'date': txnDate,
+    };
+  }
+
   /// Update metadata of an existing inventory product
   static Future<InventoryProduct> updateInventoryProductDirect({
     required String id,

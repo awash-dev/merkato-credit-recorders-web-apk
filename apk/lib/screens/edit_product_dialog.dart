@@ -3,7 +3,9 @@ import 'package:et_date_picker/et_date_picker.dart';
 
 import '../models/inventory_product.dart';
 import '../services/api_service.dart';
+import '../services/language_service.dart';
 import '../services/ethiopian_calendar.dart';
+import '../theme/app_theme.dart';
 import '../models/user.dart';
 
 class EditProductDialog extends StatefulWidget {
@@ -153,9 +155,9 @@ class _EditProductDialogState extends State<EditProductDialog> {
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
       showSelectedDatePreview: true,
-      useEthiopicNumerals: widget.isAmharic,
-      cancelText: widget.isAmharic ? 'ሰርዝ' : 'Cancel',
-      confirmText: widget.isAmharic ? 'ይሁን' : 'OK',
+      useEthiopicNumerals: false,
+      cancelText: LanguageService.t('cancel'),
+      confirmText: LanguageService.t('confirm'),
     );
     if (result != null) {
       final picked = result.gregorianDate;
@@ -218,14 +220,14 @@ class _EditProductDialogState extends State<EditProductDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final borderColor = isDark
-        ? const Color(0xFF2E384D)
-        : const Color(0xFFCBD5E1);
+    final borderColor = isDark ? AppTheme.darkBorder : AppTheme.lightBorder;
+    final dialogBg = isDark ? AppTheme.darkSurface : AppTheme.lightSurface;
     final isAdmin = widget.currentUser?.isAdmin ?? false;
 
     return Dialog(
+      backgroundColor: dialogBg,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLg)),
       child: Container(
         constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
@@ -533,7 +535,7 @@ class _EditProductDialogState extends State<EditProductDialog> {
                     borderRadius: BorderRadius.circular(8),
                     child: InputDecorator(
                       decoration: InputDecoration(
-                        labelText: widget.isAmharic ? 'ቀን' : 'Date',
+                        labelText: LanguageService.t('date'),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -602,7 +604,7 @@ class _EditProductDialogState extends State<EditProductDialog> {
                           child: TextFormField(
                             controller: _categoryController,
                             decoration: InputDecoration(
-                              labelText: widget.isAmharic ? 'ምድብ' : 'Category',
+                              labelText: LanguageService.t('category'),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
@@ -618,7 +620,7 @@ class _EditProductDialogState extends State<EditProductDialog> {
                           child: TextFormField(
                             controller: _supplierController,
                             decoration: InputDecoration(
-                              labelText: widget.isAmharic ? 'አቅራቢ' : 'Supplier',
+                              labelText: LanguageService.t('supplier'),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
@@ -670,7 +672,7 @@ class _EditProductDialogState extends State<EditProductDialog> {
                         onPressed: _isSaving
                             ? null
                             : () => Navigator.pop(context),
-                        child: Text(widget.isAmharic ? 'ይቅር' : 'Cancel'),
+                        child: Text(LanguageService.t('cancel')),
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton.icon(
@@ -701,7 +703,7 @@ class _EditProductDialogState extends State<EditProductDialog> {
                               ? (widget.isAmharic
                                     ? 'በማስቀመጥ ላይ...'
                                     : 'Saving...')
-                              : (widget.isAmharic ? 'አስቀምጥ' : 'Save Changes'),
+                              : (LanguageService.t('save')),
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),

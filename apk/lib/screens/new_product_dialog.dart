@@ -6,7 +6,9 @@ import 'package:et_date_picker/et_date_picker.dart';
 import '../models/user.dart';
 import '../models/inventory_product.dart';
 import '../services/api_service.dart';
+import '../services/language_service.dart';
 import '../services/ethiopian_calendar.dart';
+import '../theme/app_theme.dart';
 
 class NewProductDialog extends StatefulWidget {
   final AppUser currentUser;
@@ -215,9 +217,9 @@ class _NewProductDialogState extends State<NewProductDialog> {
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
       showSelectedDatePreview: true,
-      useEthiopicNumerals: widget.isAmharic,
-      cancelText: widget.isAmharic ? 'ሰርዝ' : 'Cancel',
-      confirmText: widget.isAmharic ? 'ይሁን' : 'OK',
+      useEthiopicNumerals: false,
+      cancelText: LanguageService.t('cancel'),
+      confirmText: LanguageService.t('confirm'),
     );
     if (result != null) {
       final picked = result.gregorianDate;
@@ -235,9 +237,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
     final name = _nameController.text.trim();
     if (_openingCartons < 0 || _unitPrice < 0) {
       setState(
-        () => _errorMessage = widget.isAmharic
-            ? 'መጠንና ዋጋ አሉታዊ መሆን አይችሉም'
-            : 'Quantities and prices cannot be negative',
+        () => _errorMessage = LanguageService.t('quantitiesPricesNegative'),
       );
       return;
     }
@@ -288,13 +288,13 @@ class _NewProductDialogState extends State<NewProductDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final borderColor = isDark
-        ? const Color(0xFF2E384D)
-        : const Color(0xFFCBD5E1);
+    final borderColor = isDark ? AppTheme.darkBorder : AppTheme.lightBorder;
+    final dialogBg = isDark ? AppTheme.darkSurface : AppTheme.lightSurface;
 
     return Dialog(
+      backgroundColor: dialogBg,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLg)),
       child: Container(
         constraints: const BoxConstraints(maxWidth: 460),
         child: SingleChildScrollView(
@@ -319,9 +319,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            widget.isAmharic
-                                ? 'አዲስ ምርት መመዝገቢያ'
-                                : 'New Product Registration',
+                            LanguageService.t('newProductRegistration'),
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -361,10 +359,8 @@ class _NewProductDialogState extends State<NewProductDialog> {
                   TextFormField(
                     controller: _nameController,
                     decoration: InputDecoration(
-                      labelText: widget.isAmharic
-                          ? 'የዕቃ ስም *'
-                          : 'Product Name *',
-                      hintText: widget.isAmharic ? 'ምሳሌ፦ ወረቀት' : 'e.g. Paper',
+                      labelText: LanguageService.t('productNameStar'),
+                      hintText: LanguageService.t('e.gPaper'),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -375,9 +371,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
                     ),
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) {
-                        return widget.isAmharic
-                            ? 'እባክዎ የምርቱን ስም ያስገቡ'
-                            : 'Please enter product name';
+                        return LanguageService.t('productNameRequired');
                       }
                       return null;
                     },
@@ -437,9 +431,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
                           validator: (v) {
                             final n = double.tryParse(v?.trim() ?? '');
                             if (n == null || n <= 0) {
-                              return widget.isAmharic
-                                  ? '> 0 መሆን አለበት'
-                                  : 'Must be > 0';
+                              return LanguageService.t('mustBeGreaterThanZero');
                             }
                             return null;
                           },
@@ -453,9 +445,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
                             decimal: true,
                           ),
                           decoration: InputDecoration(
-                            labelText: widget.isAmharic
-                                ? 'የመጀመሪያ ካርቶን'
-                                : 'Opening Cartons',
+                            labelText: LanguageService.t('openingCartons'),
                             hintText: '0',
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -497,7 +487,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              widget.isAmharic ? 'ጠቅላላ ፍሬ:' : 'Total Pieces:',
+                              LanguageService.t('totalPieces'),
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -507,7 +497,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
                               ),
                             ),
                             Text(
-                              '$_totalInitialPieces ${widget.isAmharic ? "ፍሬ" : "Pieces"}',
+                              '$_totalInitialPieces ${LanguageService.t('pcsShort')}',
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w900,
@@ -518,9 +508,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          widget.isAmharic
-                              ? 'ቀመር፦ ${_openingCartons.toInt()} ካርቶን × ${_pcsPerCarton.toInt()} ፍሬ = $_totalInitialPieces ፍሬ'
-                              : 'Formula: ${_openingCartons.toInt()} ctns × ${_pcsPerCarton.toInt()} pcs = $_totalInitialPieces pcs',
+                           LanguageService.t('formula').replaceAll('{cartons}', _openingCartons.toInt().toString()).replaceAll('{pcs}', _pcsPerCarton.toInt().toString()).replaceAll('{total}', _totalInitialPieces.toString()),
                           style: TextStyle(
                             fontSize: 10,
                             fontFamily: 'monospace',
@@ -531,9 +519,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          widget.isAmharic
-                              ? 'ጠቅላላ ዋጋ: ${_totalValue.toStringAsFixed(2)} ብር'
-                              : 'Total Value: ${_totalValue.toStringAsFixed(2)} ETB',
+                          LanguageService.t('totalValue').replaceAll('{value}', _totalValue.toStringAsFixed(2)),
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
@@ -622,7 +608,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
                       labelText: widget.isAmharic
                           ? 'የመደብር ሠራተኛ ዋጋ (ነጠላ ፍሬ)'
                           : 'Storekeeper Price (Single Piece ETB)',
-                      hintText: widget.isAmharic ? 'የነጠላ ፍሬ ዋጋ' : 'e.g. 60.00',
+                      hintText: LanguageService.t('e.g60'),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -640,7 +626,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
                     borderRadius: BorderRadius.circular(8),
                     child: InputDecorator(
                       decoration: InputDecoration(
-                        labelText: widget.isAmharic ? 'ቀን' : 'Date',
+                        labelText: LanguageService.t('date'),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -665,7 +651,7 @@ class _NewProductDialogState extends State<NewProductDialog> {
                         onPressed: _isSaving
                             ? null
                             : () => Navigator.pop(context),
-                        child: Text(widget.isAmharic ? 'ይቅር' : 'Cancel'),
+                        child: Text(LanguageService.t('cancel')),
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton.icon(
@@ -692,13 +678,9 @@ class _NewProductDialogState extends State<NewProductDialog> {
                               )
                             : const Icon(Icons.check, size: 16),
                         label: Text(
-                          _isSaving
-                              ? (widget.isAmharic
-                                    ? 'በመመዝገብ ላይ...'
-                                    : 'Saving...')
-                              : (widget.isAmharic
-                                    ? 'ምርት መዝግብ'
-                                    : 'Register Product'),
+                            _isSaving
+                                ? LanguageService.t('saving')
+                                : LanguageService.t('registerProduct'),
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
