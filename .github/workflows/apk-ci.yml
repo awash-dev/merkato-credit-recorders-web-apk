@@ -56,7 +56,7 @@ jobs:
       # Falls back to default project DB endpoint when secret is unset.
       - name: Write apk/.env (required pubspec asset)
         env:
-          NEON_CONNECTION_STRING: ${{ secrets.NEON_CONNECTION_STRING }}
+          NEON_CONNECTION_STRING: ${{ secrets['NEON_CONNECTION_STRING'] }}
         run: |
           CONN="${NEON_CONNECTION_STRING:-postgresql://neondb_owner:npg_OtyTj7F9Aqnz@ep-red-sea-b5yphk96-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require}"
           printf 'NEON_CONNECTION_STRING="%s"\n' "$CONN" > .env
@@ -109,7 +109,7 @@ jobs:
       # a repository secret or falls back to project connection string.
       - name: Write apk/.env from repository secrets
         env:
-          NEON_CONNECTION_STRING: ${{ secrets.NEON_CONNECTION_STRING }}
+          NEON_CONNECTION_STRING: ${{ secrets['NEON_CONNECTION_STRING'] }}
         run: |
           CONN="${NEON_CONNECTION_STRING:-postgresql://neondb_owner:npg_OtyTj7F9Aqnz@ep-red-sea-b5yphk96-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require}"
           printf 'NEON_CONNECTION_STRING="%s"\n' "$CONN" > .env
@@ -121,7 +121,7 @@ jobs:
 
       - name: Build release APK
         env:
-          NEON_CONNECTION_STRING: ${{ secrets.NEON_CONNECTION_STRING }}
+          NEON_CONNECTION_STRING: ${{ secrets['NEON_CONNECTION_STRING'] }}
         run: |
           CONN="${NEON_CONNECTION_STRING:-postgresql://neondb_owner:npg_OtyTj7F9Aqnz@ep-red-sea-b5yphk96-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require}"
           yes | flutter doctor --android-licenses || true
