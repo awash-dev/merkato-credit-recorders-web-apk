@@ -1051,9 +1051,12 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 child: const Icon(Icons.add_business_rounded, color: AppTheme.primaryBlue, size: 18),
               ),
               const SizedBox(width: 8),
-              Text(
-                _isAmharic ? 'አዲስ መደብር መፍጠር' : 'Create Store',
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              Expanded(
+                child: Text(
+                  _isAmharic ? 'አዲስ መደብር መፍጠር' : 'Create Store',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
@@ -1121,25 +1124,24 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: AppTheme.emeraldGreen.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                    ),
-                    child: const Icon(Icons.storefront_rounded, color: AppTheme.emeraldGreen, size: 18),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _isAmharic ? 'የነባር መደብሮች ዝርዝር (${_stores.length})' : 'Existing Stores (${_stores.length})',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                  ),
-                ],
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppTheme.emeraldGreen.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+                child: const Icon(Icons.storefront_rounded, color: AppTheme.emeraldGreen, size: 18),
               ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _isAmharic ? 'የነባር መደብሮች ዝርዝር (${_stores.length})' : 'Existing Stores (${_stores.length})',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
               AppStatusBadge.info(label: '${_stores.length} stores'),
             ],
           ),
@@ -1219,16 +1221,20 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                                   ),
                                   const SizedBox(width: 8),
                                 ],
-                                Text(
-                                  assignedUsers.isEmpty
-                                      ? (_isAmharic ? 'ምንም ሠራተኛ አልተመደበም' : 'No users assigned')
-                                      : '${assignedUsers.length} ${_isAmharic ? "ሠራተኛ" : (assignedUsers.length > 1 ? "members" : "member")}',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: assignedUsers.isEmpty
-                                        ? (isDark ? AppTheme.darkTextTertiary : AppTheme.lightTextTertiary)
-                                        : AppTheme.emeraldGreen,
-                                    fontWeight: FontWeight.w600,
+                                Expanded(
+                                  child: Text(
+                                    assignedUsers.isEmpty
+                                        ? (_isAmharic ? 'ምንም ሠራተኛ አልተመደበም' : 'No users assigned')
+                                        : '${assignedUsers.length} ${_isAmharic ? "ሠራተኛ" : (assignedUsers.length > 1 ? "members" : "member")}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: assignedUsers.isEmpty
+                                          ? (isDark ? AppTheme.darkTextTertiary : AppTheme.lightTextTertiary)
+                                          : AppTheme.emeraldGreen,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ],
@@ -1408,24 +1414,31 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.storefront_rounded, size: 16, color: AppTheme.primaryBlue),
-                        const SizedBox(width: 6),
-                        Text(
-                          _isAmharic ? 'መደብሮች መድብ (Select Multiple) *' : 'Assign Stores (Select Multiple) *',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
-                        ),
-                      ],
+                    const Icon(Icons.storefront_rounded, size: 16, color: AppTheme.primaryBlue),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _isAmharic ? 'መደብሮች መድብ (Select Multiple) *' : 'Assign Stores (Select Multiple) *',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    Text(
-                      '${_stores.length} ${_isAmharic ? "መደብሮች" : "stores"} | ${_selectedStoreIds.length} ${_isAmharic ? "ተመርጠዋል" : "selected"}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: _selectedStoreIds.isEmpty ? AppTheme.roseDanger : AppTheme.emeraldGreen,
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: (_selectedStoreIds.isEmpty ? AppTheme.roseDanger : AppTheme.emeraldGreen)
+                            .withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '${_selectedStoreIds.length}/${_stores.length} ${_isAmharic ? "ተመርጠዋል" : "selected"}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: _selectedStoreIds.isEmpty ? AppTheme.roseDanger : AppTheme.emeraldGreen,
+                        ),
                       ),
                     ),
                   ],

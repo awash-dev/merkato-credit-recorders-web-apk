@@ -1649,12 +1649,14 @@ class _MainScreenState extends State<MainScreen> {
                                 color: Color(0xFF16A34A),
                               ),
                               const SizedBox(width: 8),
-                              Text(
-                                LanguageService.t('salesStorekeepersStores'),
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                              Expanded(
+                                child: Text(
+                                  LanguageService.t('salesStorekeepersStores'),
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                  ),
                                 ),
                               ),
                             ],
@@ -1879,12 +1881,15 @@ class _MainScreenState extends State<MainScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              LanguageService.t('translationEditor'),
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : const Color(0xFF0F172A),
+            Expanded(
+              child: Text(
+                LanguageService.t('translationEditor'),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             Row(
